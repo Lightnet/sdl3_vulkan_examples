@@ -1,115 +1,128 @@
-#include <SDL3/SDL.h>
-#include <SDL3/SDL_vulkan.h>
-#include <vulkan/vulkan.h>
-#include <cglm/cglm.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <stdbool.h>
+#include <SDL3/SDL.h>           // SDL3 for windowing and input handling
+#include <SDL3/SDL_vulkan.h>    // SDL3 Vulkan extension for surface creation
+#include <vulkan/vulkan.h>      // Core Vulkan API for graphics
+#include <cglm/cglm.h>          // Pure C math library for vectors and matrices
+#include <stdio.h>              // Standard I/O for logging and debugging
+#include <stdlib.h>             // Standard library for memory allocation (malloc, exit)
+#include <string.h>             // String operations (memcpy for buffer data)
+#include <stdbool.h>            // Boolean type for flags (true/false)
 
+// Window dimensions
 #define WIDTH 800
 #define HEIGHT 600
 
+// Camera structure to manage position and orientation
 typedef struct {
-    vec3 pos;
-    vec3 front;
-    vec3 up;
-    float yaw;
-    float pitch;
+    vec3 pos;      // Position in 3D space (x, y, z)
+    vec3 front;    // Forward direction vector (where camera looks)
+    vec3 up;       // Up direction vector (defines camera roll)
+    float yaw;     // Horizontal rotation angle (degrees)
+    float pitch;   // Vertical rotation angle (degrees)
 } Camera;
 
+// Vulkan context to hold all Vulkan objects
 struct VulkanContext {
-    VkInstance instance;
-    VkPhysicalDevice physicalDevice;
-    VkDevice device;
-    VkQueue graphicsQueue;
-    VkSurfaceKHR surface;
-    VkSwapchainKHR swapchain;
-    VkRenderPass renderPass;
-    VkPipelineLayout pipelineLayout;
-    VkPipeline graphicsPipeline;
-    VkCommandPool commandPool;
-    VkCommandBuffer commandBuffer;
-    VkBuffer vertexBuffer;
-    VkDeviceMemory vertexMemory;
-    VkBuffer uniformBuffer;
-    VkDeviceMemory uniformMemory;
-    VkDescriptorSetLayout descriptorSetLayout;
-    VkDescriptorPool descriptorPool;
-    VkDescriptorSet descriptorSet;
-    VkSemaphore imageAvailableSemaphore;
-    VkSemaphore renderFinishedSemaphore;
-    VkFence inFlightFence;
-    uint32_t imageCount;
-    VkImage* swapchainImages;
-    VkImageView* swapchainImageViews;
-    VkFramebuffer* swapchainFramebuffers;
-} vkCtx = {0};
+    VkInstance instance;                    // Vulkan instance handle
+    VkPhysicalDevice physicalDevice;        // Selected GPU
+    VkDevice device;                        // Logical device for commands
+    VkQueue graphicsQueue;                  // Queue for graphics operations
+    VkSurfaceKHR surface;                   // Window surface for rendering
+    VkSwapchainKHR swapchain;               // Swapchain for double buffering
+    VkRenderPass renderPass;                // Render pass for pipeline
+    VkPipelineLayout pipelineLayout;        // Pipeline layout with descriptor sets
+    VkPipeline graphicsPipeline;            // Graphics pipeline for rendering
+    VkCommandPool commandPool;              // Pool for allocating command buffers
+    VkCommandBuffer commandBuffer;          // Buffer for recording draw commands
+    VkBuffer vertexBuffer;                  // Buffer for triangle vertices
+    VkDeviceMemory vertexMemory;            // Memory for vertex buffer
+    VkBuffer uniformBuffer;                 // Buffer for uniform data (matrices)
+    VkDeviceMemory uniformMemory;           // Memory for uniform buffer
+    VkDescriptorSetLayout descriptorSetLayout; // Layout for uniform bindings
+    VkDescriptorPool descriptorPool;        // Pool for descriptor sets
+    VkDescriptorSet descriptorSet;          // Descriptor set for UBO
+    VkSemaphore imageAvailableSemaphore;    // Signals when swapchain image is ready
+    VkSemaphore renderFinishedSemaphore;    // Signals when rendering is done
+    VkFence inFlightFence;                  // Syncs CPU with GPU frame completion
+    uint32_t imageCount;                    // Number of swapchain images
+    VkImage* swapchainImages;               // Array of swapchain images
+    VkImageView* swapchainImageViews;       // Views for swapchain images
+    VkFramebuffer* swapchainFramebuffers;   // Framebuffers for rendering
+} vkCtx = {0}; // Initialize all to 0 for safety
 
+// Uniform Buffer Object (UBO) for passing matrices to shaders
 typedef struct {
-    mat4 model;
-    mat4 view;
-    mat4 proj;
+    mat4 model; // Model matrix for triangle transformations
+    mat4 view;  // View matrix from camera position/orientation
+    mat4 proj;  // Projection matrix for perspective
 } UBO;
 
+// Find a memory type that matches requirements (e.g., host-visible)
 uint32_t find_memory_type(uint32_t typeFilter, VkMemoryPropertyFlags properties) {
     VkPhysicalDeviceMemoryProperties memProperties;
     vkGetPhysicalDeviceMemoryProperties(vkCtx.physicalDevice, &memProperties);
 
     for (uint32_t i = 0; i < memProperties.memoryTypeCount; i++) {
         if ((typeFilter & (1 << i)) && (memProperties.memoryTypes[i].propertyFlags & properties) == properties) {
-            return i;
+            return i; // Return index of matching memory type
         }
     }
     printf("Failed to find suitable memory type!\n");
-    exit(1);
+    exit(1); // Fatal error if no match found
 }
 
+// Update UBO with camera view and triangle rotation
 void update_uniform_buffer(Camera* cam, float rotationAngle) {
     UBO ubo;
-    glm_mat4_identity(ubo.model);
-    glm_rotate_y(ubo.model, glm_rad(rotationAngle), ubo.model);
+    glm_mat4_identity(ubo.model); // Reset model matrix to identity
+    glm_rotate_y(ubo.model, glm_rad(rotationAngle), ubo.model); // Rotate triangle around Y-axis
+    // View matrix: Camera looks from pos toward front, with up defining orientation
     glm_lookat(cam->pos, (vec3){cam->pos[0] + cam->front[0], cam->pos[1] + cam->front[1], cam->pos[2] + cam->front[2]}, cam->up, ubo.view);
+    // Perspective projection: 45° FOV, aspect ratio, near 0.1, far 100
     glm_perspective(glm_rad(45.0f), (float)WIDTH / HEIGHT, 0.1f, 100.0f, ubo.proj);
 
     void* data;
-    vkMapMemory(vkCtx.device, vkCtx.uniformMemory, 0, sizeof(UBO), 0, &data);
-    memcpy(data, &ubo, sizeof(UBO));
-    vkUnmapMemory(vkCtx.device, vkCtx.uniformMemory);
+    vkMapMemory(vkCtx.device, vkCtx.uniformMemory, 0, sizeof(UBO), 0, &data); // Map uniform buffer memory
+    memcpy(data, &ubo, sizeof(UBO)); // Copy UBO data to GPU memory
+    vkUnmapMemory(vkCtx.device, vkCtx.uniformMemory); // Unmap memory
 }
 
+// Initialize all Vulkan objects
 void init_vulkan(SDL_Window* window) {
+    // Instance setup
     VkApplicationInfo appInfo = {VK_STRUCTURE_TYPE_APPLICATION_INFO};
     appInfo.pApplicationName = "Vulkan SDL3";
     appInfo.applicationVersion = VK_MAKE_VERSION(1, 0, 0);
     appInfo.pEngineName = "No Engine";
     appInfo.engineVersion = VK_MAKE_VERSION(1, 0, 0);
-    appInfo.apiVersion = VK_API_VERSION_1_3;
+    appInfo.apiVersion = VK_API_VERSION_1_3; // Use Vulkan 1.3
 
-    const char* extensions[] = {VK_KHR_SURFACE_EXTENSION_NAME, "VK_KHR_win32_surface"};
+    const char* extensions[] = {VK_KHR_SURFACE_EXTENSION_NAME, "VK_KHR_win32_surface"}; // Required extensions
     VkInstanceCreateInfo createInfo = {VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO};
     createInfo.pApplicationInfo = &appInfo;
     createInfo.enabledExtensionCount = 2;
     createInfo.ppEnabledExtensionNames = extensions;
-    createInfo.enabledLayerCount = 0;
+    createInfo.enabledLayerCount = 0; // No validation layers (add "VK_LAYER_KHRONOS_validation" for debugging)
 
     if (vkCreateInstance(&createInfo, NULL, &vkCtx.instance) != VK_SUCCESS) {
         printf("Failed to create Vulkan instance\n");
         exit(1);
     }
 
+    // Create surface for Vulkan to render to SDL window
     if (!SDL_Vulkan_CreateSurface(window, vkCtx.instance, NULL, &vkCtx.surface)) {
         printf("Failed to create Vulkan surface: %s\n", SDL_GetError());
         exit(1);
     }
 
+    // Select physical device (GPU)
     uint32_t deviceCount = 0;
     vkEnumeratePhysicalDevices(vkCtx.instance, &deviceCount, NULL);
     VkPhysicalDevice* devices = malloc(deviceCount * sizeof(VkPhysicalDevice));
     vkEnumeratePhysicalDevices(vkCtx.instance, &deviceCount, devices);
-    vkCtx.physicalDevice = devices[0];
+    vkCtx.physicalDevice = devices[0]; // Simplistic: Pick first GPU
     free(devices);
 
+    // Find graphics queue family
     uint32_t queueFamilyCount = 0;
     vkGetPhysicalDeviceQueueFamilyProperties(vkCtx.physicalDevice, &queueFamilyCount, NULL);
     VkQueueFamilyProperties* queueFamilies = malloc(queueFamilyCount * sizeof(VkQueueFamilyProperties));
@@ -118,19 +131,20 @@ void init_vulkan(SDL_Window* window) {
     uint32_t graphicsFamily = -1;
     for (uint32_t i = 0; i < queueFamilyCount; i++) {
         if (queueFamilies[i].queueFlags & VK_QUEUE_GRAPHICS_BIT) {
-            graphicsFamily = i;
+            graphicsFamily = i; // First queue with graphics support
             break;
         }
     }
     free(queueFamilies);
 
+    // Create logical device with graphics queue
     float queuePriority = 1.0f;
     VkDeviceQueueCreateInfo queueCreateInfo = {VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO};
     queueCreateInfo.queueFamilyIndex = graphicsFamily;
     queueCreateInfo.queueCount = 1;
     queueCreateInfo.pQueuePriorities = &queuePriority;
 
-    const char* deviceExtensions[] = {VK_KHR_SWAPCHAIN_EXTENSION_NAME};
+    const char* deviceExtensions[] = {VK_KHR_SWAPCHAIN_EXTENSION_NAME}; // Swapchain extension
     VkDeviceCreateInfo deviceCreateInfo = {VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO};
     deviceCreateInfo.queueCreateInfoCount = 1;
     deviceCreateInfo.pQueueCreateInfos = &queueCreateInfo;
@@ -142,31 +156,34 @@ void init_vulkan(SDL_Window* window) {
         exit(1);
     }
 
-    vkGetDeviceQueue(vkCtx.device, graphicsFamily, 0, &vkCtx.graphicsQueue);
+    vkGetDeviceQueue(vkCtx.device, graphicsFamily, 0, &vkCtx.graphicsQueue); // Get graphics queue handle
 
+    // Create swapchain for double buffering
     VkSwapchainCreateInfoKHR swapchainInfo = {VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR};
     swapchainInfo.surface = vkCtx.surface;
-    swapchainInfo.minImageCount = 2;
-    swapchainInfo.imageFormat = VK_FORMAT_B8G8R8A8_UNORM;
+    swapchainInfo.minImageCount = 2; // Double buffering
+    swapchainInfo.imageFormat = VK_FORMAT_B8G8R8A8_UNORM; // Standard format
     swapchainInfo.imageColorSpace = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR;
     swapchainInfo.imageExtent.width = WIDTH;
     swapchainInfo.imageExtent.height = HEIGHT;
-    swapchainInfo.imageArrayLayers = 1;
-    swapchainInfo.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
-    swapchainInfo.preTransform = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR;
-    swapchainInfo.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
-    swapchainInfo.presentMode = VK_PRESENT_MODE_FIFO_KHR;
-    swapchainInfo.clipped = VK_TRUE;
+    swapchainInfo.imageArrayLayers = 1; // Single layer
+    swapchainInfo.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT; // Render to image
+    swapchainInfo.preTransform = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR; // No transform
+    swapchainInfo.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR; // Opaque
+    swapchainInfo.presentMode = VK_PRESENT_MODE_FIFO_KHR; // VSync-like mode
+    swapchainInfo.clipped = VK_TRUE; // Clip obscured pixels
 
     if (vkCreateSwapchainKHR(vkCtx.device, &swapchainInfo, NULL, &vkCtx.swapchain) != VK_SUCCESS) {
         printf("Failed to create swapchain\n");
         exit(1);
     }
 
+    // Get swapchain images
     vkGetSwapchainImagesKHR(vkCtx.device, vkCtx.swapchain, &vkCtx.imageCount, NULL);
     vkCtx.swapchainImages = malloc(vkCtx.imageCount * sizeof(VkImage));
     vkGetSwapchainImagesKHR(vkCtx.device, vkCtx.swapchain, &vkCtx.imageCount, vkCtx.swapchainImages);
 
+    // Create image views for swapchain images
     vkCtx.swapchainImageViews = malloc(vkCtx.imageCount * sizeof(VkImageView));
     for (uint32_t i = 0; i < vkCtx.imageCount; i++) {
         VkImageViewCreateInfo viewInfo = {VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO};
@@ -185,15 +202,16 @@ void init_vulkan(SDL_Window* window) {
         }
     }
 
+    // Create render pass for drawing
     VkAttachmentDescription colorAttachment = {};
     colorAttachment.format = VK_FORMAT_B8G8R8A8_UNORM;
-    colorAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
-    colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-    colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+    colorAttachment.samples = VK_SAMPLE_COUNT_1_BIT; // No multisampling
+    colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR; // Clear on start
+    colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE; // Store result
     colorAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
     colorAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-    colorAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-    colorAttachment.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+    colorAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED; // Initial state unknown
+    colorAttachment.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR; // Final state for presentation
 
     VkAttachmentReference colorAttachmentRef = {};
     colorAttachmentRef.attachment = 0;
@@ -215,6 +233,7 @@ void init_vulkan(SDL_Window* window) {
         exit(1);
     }
 
+    // Create framebuffers for swapchain images
     vkCtx.swapchainFramebuffers = malloc(vkCtx.imageCount * sizeof(VkFramebuffer));
     for (uint32_t i = 0; i < vkCtx.imageCount; i++) {
         VkFramebufferCreateInfo framebufferInfo = {VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO};
@@ -231,14 +250,16 @@ void init_vulkan(SDL_Window* window) {
         }
     }
 
+    // Create command pool for graphics commands
     VkCommandPoolCreateInfo commandPoolInfo = {VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO};
     commandPoolInfo.queueFamilyIndex = graphicsFamily;
-    commandPoolInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
+    commandPoolInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT; // Allow buffer resets
     if (vkCreateCommandPool(vkCtx.device, &commandPoolInfo, NULL, &vkCtx.commandPool) != VK_SUCCESS) {
         printf("Failed to create command pool\n");
         exit(1);
     }
 
+    // Allocate command buffer
     VkCommandBufferAllocateInfo allocInfo = {VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO};
     allocInfo.commandPool = vkCtx.commandPool;
     allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
@@ -249,9 +270,10 @@ void init_vulkan(SDL_Window* window) {
         exit(1);
     }
 
+    // Create synchronization objects
     VkSemaphoreCreateInfo semaphoreInfo = {VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO};
     VkFenceCreateInfo fenceInfo = {VK_STRUCTURE_TYPE_FENCE_CREATE_INFO};
-    fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
+    fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT; // Start signaled to avoid initial wait
 
     if (vkCreateSemaphore(vkCtx.device, &semaphoreInfo, NULL, &vkCtx.imageAvailableSemaphore) != VK_SUCCESS ||
         vkCreateSemaphore(vkCtx.device, &semaphoreInfo, NULL, &vkCtx.renderFinishedSemaphore) != VK_SUCCESS ||
@@ -260,11 +282,12 @@ void init_vulkan(SDL_Window* window) {
         exit(1);
     }
 
+    // Descriptor set layout for uniform buffer
     VkDescriptorSetLayoutBinding uboLayoutBinding = {};
-    uboLayoutBinding.binding = 0;
+    uboLayoutBinding.binding = 0; // Binding 0 in shader
     uboLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
     uboLayoutBinding.descriptorCount = 1;
-    uboLayoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+    uboLayoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT; // Used in vertex shader
 
     VkDescriptorSetLayoutCreateInfo layoutInfo = {VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO};
     layoutInfo.bindingCount = 1;
@@ -275,6 +298,7 @@ void init_vulkan(SDL_Window* window) {
         exit(1);
     }
 
+    // Create uniform buffer for UBO
     VkBufferCreateInfo bufferInfo = {VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
     bufferInfo.size = sizeof(UBO);
     bufferInfo.usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
@@ -299,6 +323,7 @@ void init_vulkan(SDL_Window* window) {
 
     vkBindBufferMemory(vkCtx.device, vkCtx.uniformBuffer, vkCtx.uniformMemory, 0);
 
+    // Create descriptor pool
     VkDescriptorPoolSize poolSize = {};
     poolSize.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
     poolSize.descriptorCount = 1;
@@ -313,6 +338,7 @@ void init_vulkan(SDL_Window* window) {
         exit(1);
     }
 
+    // Allocate descriptor set
     VkDescriptorSetAllocateInfo allocSetInfo = {VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
     allocSetInfo.descriptorPool = vkCtx.descriptorPool;
     allocSetInfo.descriptorSetCount = 1;
@@ -323,6 +349,7 @@ void init_vulkan(SDL_Window* window) {
         exit(1);
     }
 
+    // Update descriptor set with uniform buffer info
     VkDescriptorBufferInfo bufferDescriptorInfo = {};
     bufferDescriptorInfo.buffer = vkCtx.uniformBuffer;
     bufferDescriptorInfo.offset = 0;
@@ -339,16 +366,18 @@ void init_vulkan(SDL_Window* window) {
     vkUpdateDescriptorSets(vkCtx.device, 1, &descriptorWrite, 0, NULL);
 }
 
+// Create triangle vertex buffer
 void create_triangle() {
+    // Vertex data: 3 vertices, each with position (x, y, z) and color (r, g, b)
     float vertices[] = {
-        0.0f, -0.5f, 0.0f,  1.0f, 0.0f, 0.0f, // Top, red
-       -0.5f,  0.5f, 0.0f,  0.0f, 1.0f, 0.0f, // Bottom-left, green
-        0.5f,  0.5f, 0.0f,  0.0f, 0.0f, 1.0f  // Bottom-right, blue
+        0.0f, -0.5f, 0.0f,  1.0f, 0.0f, 0.0f, // Top vertex: red
+       -0.5f,  0.5f, 0.0f,  0.0f, 1.0f, 0.0f, // Bottom-left: green
+        0.5f,  0.5f, 0.0f,  0.0f, 0.0f, 1.0f  // Bottom-right: blue
     };
 
     VkBufferCreateInfo bufferInfo = {VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
     bufferInfo.size = sizeof(vertices);
-    bufferInfo.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
+    bufferInfo.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT; // Buffer for vertex data
     bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 
     if (vkCreateBuffer(vkCtx.device, &bufferInfo, NULL, &vkCtx.vertexBuffer) != VK_SUCCESS) {
@@ -372,10 +401,11 @@ void create_triangle() {
 
     void* data;
     vkMapMemory(vkCtx.device, vkCtx.vertexMemory, 0, bufferInfo.size, 0, &data);
-    memcpy(data, vertices, sizeof(vertices));
+    memcpy(data, vertices, sizeof(vertices)); // Copy vertex data to GPU
     vkUnmapMemory(vkCtx.device, vkCtx.vertexMemory);
 }
 
+// Create graphics pipeline with shaders
 void create_pipeline() {
     FILE* vertFile = fopen("vert.spv", "rb");
     if (!vertFile) {
@@ -424,10 +454,10 @@ void create_pipeline() {
         {VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, NULL, 0, VK_SHADER_STAGE_FRAGMENT_BIT, fragModule, "main", 0}
     };
 
-    VkVertexInputBindingDescription bindingDesc = {0, 6 * sizeof(float), VK_VERTEX_INPUT_RATE_VERTEX};
+    VkVertexInputBindingDescription bindingDesc = {0, 6 * sizeof(float), VK_VERTEX_INPUT_RATE_VERTEX}; // 6 floats per vertex
     VkVertexInputAttributeDescription attrDesc[] = {
-        {0, 0, VK_FORMAT_R32G32B32_SFLOAT, 0},
-        {1, 0, VK_FORMAT_R32G32B32_SFLOAT, 3 * sizeof(float)}
+        {0, 0, VK_FORMAT_R32G32B32_SFLOAT, 0},                // Position (vec3)
+        {1, 0, VK_FORMAT_R32G32B32_SFLOAT, 3 * sizeof(float)} // Color (vec3)
     };
 
     VkPipelineVertexInputStateCreateInfo vertexInputInfo = {VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO};
@@ -437,7 +467,7 @@ void create_pipeline() {
     vertexInputInfo.pVertexAttributeDescriptions = attrDesc;
 
     VkPipelineInputAssemblyStateCreateInfo inputAssembly = {VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO};
-    inputAssembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+    inputAssembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST; // Draw as triangles
 
     VkViewport viewport = {0.0f, 0.0f, (float)WIDTH, (float)HEIGHT, 0.0f, 1.0f};
     VkRect2D scissor = {{0, 0}, {WIDTH, HEIGHT}};
@@ -448,7 +478,7 @@ void create_pipeline() {
     viewportState.pScissors = &scissor;
 
     VkPipelineRasterizationStateCreateInfo rasterizer = {VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO};
-    rasterizer.lineWidth = 1.0f;
+    rasterizer.lineWidth = 1.0f; // Default line width
 
     VkPipelineMultisampleStateCreateInfo multisampling = {VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO};
     multisampling.sampleShadingEnable = VK_FALSE;
@@ -456,7 +486,7 @@ void create_pipeline() {
 
     VkPipelineColorBlendAttachmentState colorBlendAttachment = {};
     colorBlendAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
-    colorBlendAttachment.blendEnable = VK_FALSE;
+    colorBlendAttachment.blendEnable = VK_FALSE; // No blending
 
     VkPipelineColorBlendStateCreateInfo colorBlending = {VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO};
     colorBlending.attachmentCount = 1;
@@ -464,7 +494,7 @@ void create_pipeline() {
 
     VkPipelineLayoutCreateInfo pipelineLayoutInfo = {VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
     pipelineLayoutInfo.setLayoutCount = 1;
-    pipelineLayoutInfo.pSetLayouts = &vkCtx.descriptorSetLayout;
+    pipelineLayoutInfo.pSetLayouts = &vkCtx.descriptorSetLayout; // Include UBO layout
 
     if (vkCreatePipelineLayout(vkCtx.device, &pipelineLayoutInfo, NULL, &vkCtx.pipelineLayout) != VK_SUCCESS) {
         printf("Failed to create pipeline layout\n");
@@ -495,6 +525,7 @@ void create_pipeline() {
     free(fragShaderCode);
 }
 
+// Record commands for rendering one frame
 void record_command_buffer(uint32_t imageIndex) {
     VkCommandBufferBeginInfo beginInfo = {VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
     if (vkBeginCommandBuffer(vkCtx.commandBuffer, &beginInfo) != VK_SUCCESS) {
@@ -507,7 +538,7 @@ void record_command_buffer(uint32_t imageIndex) {
     renderPassInfo.framebuffer = vkCtx.swapchainFramebuffers[imageIndex];
     renderPassInfo.renderArea.offset = (VkOffset2D){0, 0};
     renderPassInfo.renderArea.extent = (VkExtent2D){WIDTH, HEIGHT};
-    VkClearValue clearColor = {{{0.5f, 0.5f, 0.5f, 1.0f}}};
+    VkClearValue clearColor = {{{0.5f, 0.5f, 0.5f, 1.0f}}}; // Gray background
     renderPassInfo.clearValueCount = 1;
     renderPassInfo.pClearValues = &clearColor;
 
@@ -515,9 +546,9 @@ void record_command_buffer(uint32_t imageIndex) {
     vkCmdBindPipeline(vkCtx.commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, vkCtx.graphicsPipeline);
 
     VkDeviceSize offsets[] = {0};
-    vkCmdBindVertexBuffers(vkCtx.commandBuffer, 0, 1, &vkCtx.vertexBuffer, offsets);
-    vkCmdBindDescriptorSets(vkCtx.commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, vkCtx.pipelineLayout, 0, 1, &vkCtx.descriptorSet, 0, NULL);
-    vkCmdDraw(vkCtx.commandBuffer, 3, 1, 0, 0);
+    vkCmdBindVertexBuffers(vkCtx.commandBuffer, 0, 1, &vkCtx.vertexBuffer, offsets); // Bind vertex buffer
+    vkCmdBindDescriptorSets(vkCtx.commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, vkCtx.pipelineLayout, 0, 1, &vkCtx.descriptorSet, 0, NULL); // Bind UBO
+    vkCmdDraw(vkCtx.commandBuffer, 3, 1, 0, 0); // Draw 3 vertices
 
     vkCmdEndRenderPass(vkCtx.commandBuffer);
     if (vkEndCommandBuffer(vkCtx.commandBuffer) != VK_SUCCESS) {
@@ -526,6 +557,7 @@ void record_command_buffer(uint32_t imageIndex) {
     }
 }
 
+// Reset camera to initial state
 void reset_camera(Camera* cam) {
     cam->pos[0] = 0.0f; cam->pos[1] = 0.0f; cam->pos[2] = 3.0f;
     cam->front[0] = 0.0f; cam->front[1] = 0.0f; cam->front[2] = -1.0f;
@@ -535,9 +567,10 @@ void reset_camera(Camera* cam) {
     printf("Camera reset: Pos [0, 0, 3], Yaw -90, Pitch 0\n");
 }
 
+// Update camera based on input and time
 void update_camera(Camera* cam, SDL_Event* event, bool* mouseCaptured, SDL_Window* window, Uint64 deltaTime) {
-    const float speed = 2.5f; // Speed in units per second
-    float moveSpeed = speed * (deltaTime / 1000.0f); // Convert milliseconds to seconds
+    const float speed = 2.5f; // Units per second
+    float moveSpeed = speed * (deltaTime / 1000.0f); // Smooth movement based on frame time
 
     if (event->type == SDL_EVENT_KEY_DOWN) {
         switch (event->key.key) {
@@ -579,7 +612,7 @@ void update_camera(Camera* cam, SDL_Event* event, bool* mouseCaptured, SDL_Windo
     if (*mouseCaptured && event->type == SDL_EVENT_MOUSE_MOTION) {
         float sensitivity = 0.1f;
         cam->yaw += event->motion.xrel * sensitivity;
-        cam->pitch += event->motion.yrel * sensitivity; // Changed -= to += to fix up/down flip
+        cam->pitch += event->motion.yrel * sensitivity; // += fixes up/down flip
         if (cam->pitch > 89.0f) cam->pitch = 89.0f;
         if (cam->pitch < -89.0f) cam->pitch = -89.0f;
 
@@ -592,8 +625,9 @@ void update_camera(Camera* cam, SDL_Event* event, bool* mouseCaptured, SDL_Windo
     }
 }
 
+// Main entry point
 int main(int argc, char* argv[]) {
-    SDL_Init(SDL_INIT_VIDEO);
+    SDL_Init(SDL_INIT_VIDEO); // Initialize SDL video subsystem
 
     SDL_Window* window = SDL_CreateWindow("Vulkan SDL3", WIDTH, HEIGHT, SDL_WINDOW_VULKAN);
     if (!window) {
@@ -601,16 +635,16 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    init_vulkan(window);
-    create_triangle();
-    create_pipeline();
+    init_vulkan(window); // Set up Vulkan
+    create_triangle();   // Create triangle buffer
+    create_pipeline();   // Create rendering pipeline
 
-    Camera cam = {{0.0f, 0.0f, 3.0f}, {0.0f, 0.0f, -1.0f}, {0.0f, 1.0f, 0.0f}, -90.0f, 0.0f};
+    Camera cam = {{0.0f, 0.0f, 3.0f}, {0.0f, 0.0f, -1.0f}, {0.0f, 1.0f, 0.0f}, -90.0f, 0.0f}; // Initial camera state
     bool mouseCaptured = false;
     bool running = true;
     bool rotateTriangle = false;
     float rotationAngle = 0.0f;
-    Uint64 lastTime = SDL_GetTicks();
+    Uint64 lastTime = SDL_GetTicks(); // Frame timing
     SDL_Event event;
 
     while (running) {
@@ -638,13 +672,13 @@ int main(int argc, char* argv[]) {
         }
 
         if (rotateTriangle) {
-            rotationAngle += 90.0f * (deltaTime / 1000.0f); // 90 degrees per second
+            rotationAngle += 90.0f * (deltaTime / 1000.0f); // 90°/s rotation
             if (rotationAngle >= 360.0f) rotationAngle -= 360.0f;
         }
 
         update_uniform_buffer(&cam, rotationAngle);
 
-        vkWaitForFences(vkCtx.device, 1, &vkCtx.inFlightFence, VK_TRUE, UINT64_MAX);
+        vkWaitForFences(vkCtx.device, 1, &vkCtx.inFlightFence, VK_TRUE, UINT64_MAX); // Wait for previous frame
         vkResetFences(vkCtx.device, 1, &vkCtx.inFlightFence);
 
         uint32_t imageIndex;
@@ -654,8 +688,8 @@ int main(int argc, char* argv[]) {
             exit(1);
         }
 
-        vkResetCommandBuffer(vkCtx.commandBuffer, 0);
-        record_command_buffer(imageIndex);
+        vkResetCommandBuffer(vkCtx.commandBuffer, 0); // Reset command buffer
+        record_command_buffer(imageIndex); // Record draw commands
 
         VkSubmitInfo submitInfo = {VK_STRUCTURE_TYPE_SUBMIT_INFO};
         VkSemaphore waitSemaphores[] = {vkCtx.imageAvailableSemaphore};
@@ -687,8 +721,9 @@ int main(int argc, char* argv[]) {
         }
     }
 
-    vkDeviceWaitIdle(vkCtx.device);
+    vkDeviceWaitIdle(vkCtx.device); // Wait for GPU to finish before cleanup
 
+    // Cleanup in reverse order of creation
     vkDestroySemaphore(vkCtx.device, vkCtx.renderFinishedSemaphore, NULL);
     vkDestroySemaphore(vkCtx.device, vkCtx.imageAvailableSemaphore, NULL);
     vkDestroyFence(vkCtx.device, vkCtx.inFlightFence, NULL);

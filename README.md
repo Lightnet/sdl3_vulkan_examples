@@ -39,14 +39,11 @@
  * nasm 2.16.03 (https://www.nasm.us/)
  * vulkan sdk for compile shader
 
-
- 
 # C Language:
  Testing the limited of AI Agent.
  
 ## Notes:
  * Using the pure C to make SDL3 and Vulkan build to create Triangle. Note there are some required tools that SDL3 use as well Vulkan libs.
- * 
  
 # C++ Language:
  * N/A
@@ -55,11 +52,8 @@
  * https://vulkan-tutorial.com
    * Using the AI agent to reference vertex set up.
  
-
 # Grok:
  Below is Grok wrote docs. This help refs how it work.
- 
- * https://x.com/i/grok?conversation=1895183817243033883 SDL3 and Vulkan.
 
 # cglm
 

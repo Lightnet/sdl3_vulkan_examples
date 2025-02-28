@@ -54,9 +54,12 @@
 # Refs:
  * https://vulkan-tutorial.com
    * Using the AI agent to reference vertex set up.
+ 
 
 # Grok:
- Below is Grok wrote docs. This help refs how it work.   
+ Below is Grok wrote docs. This help refs how it work.
+ 
+ * https://x.com/i/grok?conversation=1895183817243033883 SDL3 and Vulkan.
 
 # cglm
 

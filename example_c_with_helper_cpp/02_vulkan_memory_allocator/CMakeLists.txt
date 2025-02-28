@@ -8,7 +8,6 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 include(FetchContent)
 
-# Fetch SDL3
 FetchContent_Declare(
     SDL3
     GIT_REPOSITORY https://github.com/libsdl-org/SDL.git
@@ -18,7 +17,6 @@ set(SDL_VULKAN ON CACHE BOOL "Enable Vulkan support" FORCE)
 set(SDL_STATIC OFF CACHE BOOL "Build static SDL library" FORCE)
 FetchContent_MakeAvailable(SDL3)
 
-# Fetch cglm
 FetchContent_Declare(
     cglm
     GIT_REPOSITORY https://github.com/recp/cglm.git
@@ -26,7 +24,6 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(cglm)
 
-# Fetch vk-bootstrap
 FetchContent_Declare(
     vk_bootstrap
     GIT_REPOSITORY https://github.com/charles-lunarg/vk-bootstrap.git
@@ -34,7 +31,6 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(vk_bootstrap)
 
-# Fetch Vulkan Memory Allocator (VMA)
 FetchContent_Declare(
     vma
     GIT_REPOSITORY https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator.git
@@ -42,31 +38,28 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(vma)
 
-# Find Vulkan
 find_package(Vulkan REQUIRED)
 
-# Executable
-add_executable(${PROJECT_NAME} src/main.c src/vulkan_init.cpp)
+add_executable(${PROJECT_NAME} 
+    src/main.c 
+    src/vulkan_init.cpp
+)
 set_source_files_properties(src/main.c PROPERTIES LANGUAGE C)
 set_source_files_properties(src/vulkan_init.cpp PROPERTIES LANGUAGE CXX)
 
-# Include directories
 target_include_directories(${PROJECT_NAME} PRIVATE 
     ${Vulkan_INCLUDE_DIRS}
     ${vk_bootstrap_SOURCE_DIR}/include
-    ${vma_SOURCE_DIR}/include  # Include VMA headers
+    ${vma_SOURCE_DIR}/include
 )
 
-# Link libraries
 target_link_libraries(${PROJECT_NAME} PRIVATE
     SDL3::SDL3
     cglm
     vk-bootstrap::vk-bootstrap
     Vulkan::Vulkan
-    # No need to link VMA explicitly; it's header-only but requires Vulkan
 )
 
-# Shader compilation
 find_program(GLSLC glslc REQUIRED HINTS "$ENV{VULKAN_SDK}/Bin")
 if(NOT GLSLC)
     message(FATAL_ERROR "glslc not found. Ensure Vulkan SDK is installed and VULKAN_SDK is set.")
@@ -91,7 +84,6 @@ endforeach()
 add_custom_target(Shaders ALL DEPENDS ${SHADER_OUTPUTS})
 add_dependencies(${PROJECT_NAME} Shaders)
 
-# Post-build steps for Windows
 if(WIN32)
     add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:SDL3::SDL3> $<TARGET_FILE_DIR:${PROJECT_NAME}>

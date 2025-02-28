@@ -1,7 +1,7 @@
 #include "VkBootstrap.h"
 #include <vulkan/vulkan.h>
 #include <SDL3/SDL_vulkan.h>
-#define VMA_IMPLEMENTATION  // Define before including vk_mem_alloc.h to include implementation
+#define VMA_IMPLEMENTATION  // Include VMA implementation in this file
 #include <vk_mem_alloc.h>
 #include <stdexcept>
 

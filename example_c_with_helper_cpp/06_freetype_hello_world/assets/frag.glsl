@@ -10,7 +10,7 @@ layout(binding = 1) uniform sampler2D textSampler;
 void main() {
     if (fragTexFlag > 0.5) {
         float alpha = texture(textSampler, fragTexCoord).r;
-        outColor = vec4(alpha, 0.0, 0.0, 1.0); // Red where text should be, black background
+        outColor = vec4(1.0, 1.0, 1.0, alpha); // White text with alpha
     } else {
         outColor = vec4(fragColor, 1.0);
     }

@@ -224,6 +224,7 @@ void destroy_cube() {
     printf("Cube destroyed with VMA\n");
 }
 
+
 void create_text() {
   if (vkCtx.text.exists) {
       printf("Text already exists, skipping creation\n");
@@ -401,12 +402,12 @@ void create_text() {
   vkUpdateDescriptorSets(vkCtx.device, 1, &descriptorWrite, 0, NULL);
 
   float vertices[] = {
-      -0.5f, -0.1f, 0.0f,  1.0f, 1.0f, 1.0f,  0.0f, 1.0f,  1.0f,
-      -0.5f,  0.1f, 0.0f,  1.0f, 1.0f, 1.0f,  0.0f, 0.0f,  1.0f,
-       0.5f, -0.1f, 0.0f,  1.0f, 1.0f, 1.0f,  1.0f, 1.0f,  1.0f,
-      -0.5f,  0.1f, 0.0f,  1.0f, 1.0f, 1.0f,  0.0f, 0.0f,  1.0f,
-       0.5f,  0.1f, 0.0f,  1.0f, 1.0f, 1.0f,  1.0f, 0.0f,  1.0f,
-       0.5f, -0.1f, 0.0f,  1.0f, 1.0f, 1.0f,  1.0f, 1.0f,  1.0f
+      -0.5f, -0.1f, 0.0f,  1.0f, 1.0f, 1.0f,  0.0f, 1.0f,  1.0f, // Bottom-left (texture bottom-left)
+      -0.5f,  0.1f, 0.0f,  1.0f, 1.0f, 1.0f,  0.0f, 0.0f,  1.0f, // Top-left (texture top-left)
+       0.5f, -0.1f, 0.0f,  1.0f, 1.0f, 1.0f,  1.0f, 1.0f,  1.0f, // Bottom-right (texture bottom-right)
+      -0.5f,  0.1f, 0.0f,  1.0f, 1.0f, 1.0f,  0.0f, 0.0f,  1.0f, // Top-left (texture top-left)
+       0.5f,  0.1f, 0.0f,  1.0f, 1.0f, 1.0f,  1.0f, 0.0f,  1.0f, // Top-right (texture top-right)
+       0.5f, -0.1f, 0.0f,  1.0f, 1.0f, 1.0f,  1.0f, 1.0f,  1.0f  // Bottom-right (texture bottom-right)
   };
 
   VkBufferCreateInfo textBufferInfo = {VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
@@ -434,24 +435,48 @@ void create_text() {
   FT_Done_Face(face);
 }
 
-void destroy_text() {
-    if (!vkCtx.text.exists) {
-        printf("Text does not exist, skipping destruction\n");
-        return;
-    }
 
-    vkDeviceWaitIdle(vkCtx.device);
-    vkDestroyImageView(vkCtx.device, vkCtx.text.textureView, NULL);
-    vmaDestroyImage(allocator, vkCtx.text.texture, vkCtx.text.texAlloc);
-    vmaDestroyBuffer(allocator, vkCtx.text.buffer, vkCtx.text.allocation);
-    vkCtx.text.buffer = VK_NULL_HANDLE;
-    vkCtx.text.allocation = VK_NULL_HANDLE;
-    vkCtx.text.texture = VK_NULL_HANDLE;
-    vkCtx.text.texAlloc = VK_NULL_HANDLE;
-    vkCtx.text.textureView = VK_NULL_HANDLE;
-    vkCtx.text.vertexCount = 0;
-    vkCtx.text.exists = false;
-    printf("Text destroyed with VMA\n");
+
+
+
+
+
+
+void destroy_text() {
+  if (!vkCtx.text.exists) {
+      printf("Text does not exist, skipping destruction\n");
+      return;
+  }
+
+  vkDeviceWaitIdle(vkCtx.device);
+  vkDestroyImageView(vkCtx.device, vkCtx.text.textureView, NULL);
+  vmaDestroyImage(allocator, vkCtx.text.texture, vkCtx.text.texAlloc);
+  vmaDestroyBuffer(allocator, vkCtx.text.buffer, vkCtx.text.allocation);
+
+  // Revert descriptor set to dummy texture
+  VkDescriptorImageInfo dummyDescriptorImageInfo = {};
+  dummyDescriptorImageInfo.sampler = vkCtx.textureSampler;
+  dummyDescriptorImageInfo.imageView = dummyTextureView;
+  dummyDescriptorImageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
+  VkWriteDescriptorSet descriptorWrite = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
+  descriptorWrite.dstSet = vkCtx.descriptorSet;
+  descriptorWrite.dstBinding = 1;
+  descriptorWrite.dstArrayElement = 0;
+  descriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+  descriptorWrite.descriptorCount = 1;
+  descriptorWrite.pImageInfo = &dummyDescriptorImageInfo;
+
+  vkUpdateDescriptorSets(vkCtx.device, 1, &descriptorWrite, 0, NULL);
+
+  vkCtx.text.buffer = VK_NULL_HANDLE;
+  vkCtx.text.allocation = VK_NULL_HANDLE;
+  vkCtx.text.texture = VK_NULL_HANDLE;
+  vkCtx.text.texAlloc = VK_NULL_HANDLE;
+  vkCtx.text.textureView = VK_NULL_HANDLE;
+  vkCtx.text.vertexCount = 0;
+  vkCtx.text.exists = false;
+  printf("Text destroyed with VMA\n");
 }
 
 void reflect_vertex_inputs(const char* shaderCode, size_t codeSize, VkVertexInputAttributeDescription** attrDesc, uint32_t* attrCount, uint32_t* stride) {
@@ -530,135 +555,141 @@ void reflect_vertex_inputs(const char* shaderCode, size_t codeSize, VkVertexInpu
 }
 
 void create_pipeline() {
-    printf("Attempting to load shaders...\n");
-    FILE* vertFile = fopen("vert.spv", "rb");
-    if (!vertFile) {
-        fprintf(stderr, "Failed to open vert.spv - ensure it’s in the Debug directory\n");
-        exit(1);
-    }
-    fseek(vertFile, 0, SEEK_END);
-    long vertSize = ftell(vertFile);
-    fseek(vertFile, 0, SEEK_SET);
-    char* vertShaderCode = malloc(vertSize);
-    fread(vertShaderCode, 1, vertSize, vertFile);
-    fclose(vertFile);
-    printf("Vertex shader loaded successfully\n");
+  printf("Attempting to load shaders...\n");
+  FILE* vertFile = fopen("vert.spv", "rb");
+  if (!vertFile) {
+      fprintf(stderr, "Failed to open vert.spv - ensure it’s in the Debug directory\n");
+      exit(1);
+  }
+  fseek(vertFile, 0, SEEK_END);
+  long vertSize = ftell(vertFile);
+  fseek(vertFile, 0, SEEK_SET);
+  char* vertShaderCode = malloc(vertSize);
+  fread(vertShaderCode, 1, vertSize, vertFile);
+  fclose(vertFile);
+  printf("Vertex shader loaded successfully\n");
 
-    FILE* fragFile = fopen("frag.spv", "rb");
-    if (!fragFile) {
-        fprintf(stderr, "Failed to open frag.spv - ensure it’s in the Debug directory\n");
-        exit(1);
-    }
-    fseek(fragFile, 0, SEEK_END);
-    long fragSize = ftell(fragFile);
-    fseek(fragFile, 0, SEEK_SET);
-    char* fragShaderCode = malloc(fragSize);
-    fread(fragShaderCode, 1, fragSize, fragFile);
-    fclose(fragFile);
-    printf("Fragment shader loaded successfully\n");
+  FILE* fragFile = fopen("frag.spv", "rb");
+  if (!fragFile) {
+      fprintf(stderr, "Failed to open frag.spv - ensure it’s in the Debug directory\n");
+      exit(1);
+  }
+  fseek(fragFile, 0, SEEK_END);
+  long fragSize = ftell(fragFile);
+  fseek(fragFile, 0, SEEK_SET);
+  char* fragShaderCode = malloc(fragSize);
+  fread(fragShaderCode, 1, fragSize, fragFile);
+  fclose(fragFile);
+  printf("Fragment shader loaded successfully\n");
 
-    VkVertexInputAttributeDescription* attrDesc = NULL;
-    uint32_t attrCount = 0;
-    uint32_t stride = 0;
-    reflect_vertex_inputs(vertShaderCode, vertSize, &attrDesc, &attrCount, &stride);
+  VkVertexInputAttributeDescription* attrDesc = NULL;
+  uint32_t attrCount = 0;
+  uint32_t stride = 0;
+  reflect_vertex_inputs(vertShaderCode, vertSize, &attrDesc, &attrCount, &stride);
 
-    VkShaderModuleCreateInfo vertShaderInfo = {VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO};
-    vertShaderInfo.codeSize = vertSize;
-    vertShaderInfo.pCode = (uint32_t*)vertShaderCode;
-    VkShaderModule vertModule;
-    if (vkCreateShaderModule(vkCtx.device, &vertShaderInfo, NULL, &vertModule) != VK_SUCCESS) {
-        fprintf(stderr, "Failed to create vertex shader module\n");
-        exit(1);
-    }
+  VkShaderModuleCreateInfo vertShaderInfo = {VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO};
+  vertShaderInfo.codeSize = vertSize;
+  vertShaderInfo.pCode = (uint32_t*)vertShaderCode;
+  VkShaderModule vertModule;
+  if (vkCreateShaderModule(vkCtx.device, &vertShaderInfo, NULL, &vertModule) != VK_SUCCESS) {
+      fprintf(stderr, "Failed to create vertex shader module\n");
+      exit(1);
+  }
 
-    VkShaderModuleCreateInfo fragShaderInfo = {VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO};
-    fragShaderInfo.codeSize = fragSize;
-    fragShaderInfo.pCode = (uint32_t*)fragShaderCode;
-    VkShaderModule fragModule;
-    if (vkCreateShaderModule(vkCtx.device, &fragShaderInfo, NULL, &fragModule) != VK_SUCCESS) {
-        fprintf(stderr, "Failed to create fragment shader module\n");
-        exit(1);
-    }
+  VkShaderModuleCreateInfo fragShaderInfo = {VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO};
+  fragShaderInfo.codeSize = fragSize;
+  fragShaderInfo.pCode = (uint32_t*)fragShaderCode;
+  VkShaderModule fragModule;
+  if (vkCreateShaderModule(vkCtx.device, &fragShaderInfo, NULL, &fragModule) != VK_SUCCESS) {
+      fprintf(stderr, "Failed to create fragment shader module\n");
+      exit(1);
+  }
 
-    VkPipelineShaderStageCreateInfo shaderStages[] = {
-        {VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, NULL, 0, VK_SHADER_STAGE_VERTEX_BIT, vertModule, "main", 0},
-        {VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, NULL, 0, VK_SHADER_STAGE_FRAGMENT_BIT, fragModule, "main", 0}
-    };
+  VkPipelineShaderStageCreateInfo shaderStages[] = {
+      {VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, NULL, 0, VK_SHADER_STAGE_VERTEX_BIT, vertModule, "main", 0},
+      {VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, NULL, 0, VK_SHADER_STAGE_FRAGMENT_BIT, fragModule, "main", 0}
+  };
 
-    VkVertexInputBindingDescription bindingDesc = {0, stride, VK_VERTEX_INPUT_RATE_VERTEX};
-    VkPipelineVertexInputStateCreateInfo vertexInputInfo = {VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO};
-    vertexInputInfo.vertexBindingDescriptionCount = 1;
-    vertexInputInfo.pVertexBindingDescriptions = &bindingDesc;
-    vertexInputInfo.vertexAttributeDescriptionCount = attrCount;
-    vertexInputInfo.pVertexAttributeDescriptions = attrDesc;
+  VkVertexInputBindingDescription bindingDesc = {0, stride, VK_VERTEX_INPUT_RATE_VERTEX};
+  VkPipelineVertexInputStateCreateInfo vertexInputInfo = {VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO};
+  vertexInputInfo.vertexBindingDescriptionCount = 1;
+  vertexInputInfo.pVertexBindingDescriptions = &bindingDesc;
+  vertexInputInfo.vertexAttributeDescriptionCount = attrCount;
+  vertexInputInfo.pVertexAttributeDescriptions = attrDesc;
 
-    VkPipelineInputAssemblyStateCreateInfo inputAssembly = {VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO};
-    inputAssembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+  VkPipelineInputAssemblyStateCreateInfo inputAssembly = {VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO};
+  inputAssembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
 
-    VkViewport viewport = {0.0f, 0.0f, (float)WIDTH, (float)HEIGHT, 0.0f, 1.0f};
-    VkRect2D scissor = {{0, 0}, {WIDTH, HEIGHT}};
-    VkPipelineViewportStateCreateInfo viewportState = {VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO};
-    viewportState.viewportCount = 1;
-    viewportState.pViewports = &viewport;
-    viewportState.scissorCount = 1;
-    viewportState.pScissors = &scissor;
+  VkViewport viewport = {0.0f, 0.0f, (float)WIDTH, (float)HEIGHT, 0.0f, 1.0f};
+  VkRect2D scissor = {{0, 0}, {WIDTH, HEIGHT}};
+  VkPipelineViewportStateCreateInfo viewportState = {VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO};
+  viewportState.viewportCount = 1;
+  viewportState.pViewports = &viewport;
+  viewportState.scissorCount = 1;
+  viewportState.pScissors = &scissor;
 
-    VkPipelineRasterizationStateCreateInfo rasterizer = {VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO};
-    rasterizer.cullMode = VK_CULL_MODE_BACK_BIT;
-    rasterizer.frontFace = VK_FRONT_FACE_CLOCKWISE;
-    rasterizer.lineWidth = 1.0f;
+  VkPipelineRasterizationStateCreateInfo rasterizer = {VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO};
+  rasterizer.cullMode = VK_CULL_MODE_BACK_BIT;
+  rasterizer.frontFace = VK_FRONT_FACE_CLOCKWISE;
+  rasterizer.lineWidth = 1.0f;
 
-    VkPipelineDepthStencilStateCreateInfo depthStencil = {VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO};
-    depthStencil.depthTestEnable = VK_TRUE;
-    depthStencil.depthWriteEnable = VK_TRUE;
-    depthStencil.depthCompareOp = VK_COMPARE_OP_LESS;
+  VkPipelineDepthStencilStateCreateInfo depthStencil = {VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO};
+  depthStencil.depthTestEnable = VK_TRUE;
+  depthStencil.depthWriteEnable = VK_TRUE;
+  depthStencil.depthCompareOp = VK_COMPARE_OP_LESS;
 
-    VkPipelineMultisampleStateCreateInfo multisampling = {VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO};
-    multisampling.sampleShadingEnable = VK_FALSE;
-    multisampling.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+  VkPipelineMultisampleStateCreateInfo multisampling = {VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO};
+  multisampling.sampleShadingEnable = VK_FALSE;
+  multisampling.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
 
-    VkPipelineColorBlendAttachmentState colorBlendAttachment = {};
-    colorBlendAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
-    colorBlendAttachment.blendEnable = VK_FALSE;
+  VkPipelineColorBlendAttachmentState colorBlendAttachment = {};
+  colorBlendAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+  colorBlendAttachment.blendEnable = VK_TRUE;
+  colorBlendAttachment.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+  colorBlendAttachment.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+  colorBlendAttachment.colorBlendOp = VK_BLEND_OP_ADD;
+  colorBlendAttachment.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+  colorBlendAttachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
+  colorBlendAttachment.alphaBlendOp = VK_BLEND_OP_ADD;
 
-    VkPipelineColorBlendStateCreateInfo colorBlending = {VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO};
-    colorBlending.attachmentCount = 1;
-    colorBlending.pAttachments = &colorBlendAttachment;
+  VkPipelineColorBlendStateCreateInfo colorBlending = {VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO};
+  colorBlending.attachmentCount = 1;
+  colorBlending.pAttachments = &colorBlendAttachment;
 
-    VkPipelineLayoutCreateInfo pipelineLayoutInfo = {VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
-    pipelineLayoutInfo.setLayoutCount = 1;
-    pipelineLayoutInfo.pSetLayouts = &vkCtx.descriptorSetLayout;
+  VkPipelineLayoutCreateInfo pipelineLayoutInfo = {VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
+  pipelineLayoutInfo.setLayoutCount = 1;
+  pipelineLayoutInfo.pSetLayouts = &vkCtx.descriptorSetLayout;
 
-    if (vkCreatePipelineLayout(vkCtx.device, &pipelineLayoutInfo, NULL, &vkCtx.pipelineLayout) != VK_SUCCESS) {
-        fprintf(stderr, "Failed to create pipeline layout\n");
-        exit(1);
-    }
+  if (vkCreatePipelineLayout(vkCtx.device, &pipelineLayoutInfo, NULL, &vkCtx.pipelineLayout) != VK_SUCCESS) {
+      fprintf(stderr, "Failed to create pipeline layout\n");
+      exit(1);
+  }
 
-    VkGraphicsPipelineCreateInfo pipelineInfo = {VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO};
-    pipelineInfo.stageCount = 2;
-    pipelineInfo.pStages = shaderStages;
-    pipelineInfo.pVertexInputState = &vertexInputInfo;
-    pipelineInfo.pInputAssemblyState = &inputAssembly;
-    pipelineInfo.pViewportState = &viewportState;
-    pipelineInfo.pRasterizationState = &rasterizer;
-    pipelineInfo.pMultisampleState = &multisampling;
-    pipelineInfo.pDepthStencilState = &depthStencil;
-    pipelineInfo.pColorBlendState = &colorBlending;
-    pipelineInfo.layout = vkCtx.pipelineLayout;
-    pipelineInfo.renderPass = vkCtx.renderPass;
-    pipelineInfo.subpass = 0;
+  VkGraphicsPipelineCreateInfo pipelineInfo = {VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO};
+  pipelineInfo.stageCount = 2;
+  pipelineInfo.pStages = shaderStages;
+  pipelineInfo.pVertexInputState = &vertexInputInfo;
+  pipelineInfo.pInputAssemblyState = &inputAssembly;
+  pipelineInfo.pViewportState = &viewportState;
+  pipelineInfo.pRasterizationState = &rasterizer;
+  pipelineInfo.pMultisampleState = &multisampling;
+  pipelineInfo.pDepthStencilState = &depthStencil;
+  pipelineInfo.pColorBlendState = &colorBlending;
+  pipelineInfo.layout = vkCtx.pipelineLayout;
+  pipelineInfo.renderPass = vkCtx.renderPass;
+  pipelineInfo.subpass = 0;
 
-    if (vkCreateGraphicsPipelines(vkCtx.device, VK_NULL_HANDLE, 1, &pipelineInfo, NULL, &vkCtx.graphicsPipeline) != VK_SUCCESS) {
-        fprintf(stderr, "Failed to create graphics pipeline\n");
-        exit(1);
-    }
+  if (vkCreateGraphicsPipelines(vkCtx.device, VK_NULL_HANDLE, 1, &pipelineInfo, NULL, &vkCtx.graphicsPipeline) != VK_SUCCESS) {
+      fprintf(stderr, "Failed to create graphics pipeline\n");
+      exit(1);
+  }
 
-    vkDestroyShaderModule(vkCtx.device, fragModule, NULL);
-    vkDestroyShaderModule(vkCtx.device, vertModule, NULL);
-    free(vertShaderCode);
-    free(fragShaderCode);
-    free(attrDesc);
-    printf("Graphics pipeline created successfully\n");
+  vkDestroyShaderModule(vkCtx.device, fragModule, NULL);
+  vkDestroyShaderModule(vkCtx.device, vertModule, NULL);
+  free(vertShaderCode);
+  free(fragShaderCode);
+  free(attrDesc);
+  printf("Graphics pipeline created successfully\n");
 }
 
 void record_command_buffer(uint32_t imageIndex) {

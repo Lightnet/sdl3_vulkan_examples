@@ -38,6 +38,7 @@
  * python 3.13
  * nasm 2.16.03 (https://www.nasm.us/)
  * vulkan sdk for compile shader
+ * pkg-config (https://www.freedesktop.org/wiki/Software/pkg-config)
 
 # C Language:
  Testing the limited of AI Agent.

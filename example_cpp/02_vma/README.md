@@ -1,0 +1,2 @@
+# Information:
+ For VulkanMemoryAllocator. vma

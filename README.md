@@ -38,7 +38,7 @@
  * python 3.13
  * nasm 2.16.03 (https://www.nasm.us/)
  * vulkan sdk for compile shader
- * pkg-config (https://www.freedesktop.org/wiki/Software/pkg-config)
+ * pkg-config (https://www.freedesktop.org/wiki/Software/pkg-config) alt pkg-config lite
 
 # C Language:
  Testing the limited of AI Agent.
@@ -47,7 +47,129 @@
  * Using the pure C to make SDL3 and Vulkan build to create Triangle. Note there are some required tools that SDL3 use as well Vulkan libs.
  
 # C++ Language:
- * N/A
+ * Simple triangle
+ * VMA
+ 
+# CMake guide:
+
+  Self refs to not forget some config and setup.
+
+  There are different way to set up build. Note there are config build need to set else there will be error.
+  
+  Note some projects required rebuild twice to build correct. Still need to work those error on first build.
+  
+  There are two build. One is set up build and other is compile build. They are different set up but they do in order.
+  
+  There are different type build config. But using "Debug" and "Release".
+  
+  Note there some build set is important.
+
+build.bat
+```
+cmake -G "Visual Studio 17 2022" -A x64 -DCMAKE_BUILD_TYPE=Debug
+```
+CMakeLists.txt
+```
+message(STATUS "DCMAKE_BUILD_TYPE: ${CMAKE_BUILD_TYPE}")
+```
+
+So config command line or script bat is important. The reason is simple. CMAKE_BUILD_TYPE will return empty. The script in cmake will try to check which build type else it throw errors. It up to dev to set up and write it.
+
+Same with the compile build.
+
+```
+cmake --build . --config Debug
+```
+Those are use in Generator expressions.
+ * https://cmake.org/cmake/help/latest/manual/cmake-generator-expressions.7.html#introduction
+ * https://cmake.org/cmake/help/latest/manual/cmake-generator-expressions.7.html#logical-operators
+ 
+## Those use in :
+ * target_include_directories
+ * target_compile_definitions
+ * add_custom_target
+ * check for more docs.
+ 
+### Conditional Expressions:
+```
+$<condition:true_string>
+```
+Meaning that this is if statement for compile build.
+
+```
+$<CONFIG:Debug>
+```
+This will check if the config is Debug example.
+
+```
+cmake --build . --config Debug
+```
+
+```
+$<CONFIG:Debug>
+```
+This result will return 0 or 1 if command line is has debug set.
+
+
+```
+$<$<CONFIG:Debug>: MyDebug>
+```
+This condition if config debug it will out put "MyDebug" for config debug. Most important that space will added as well.
+
+For reason to writing to remind of me how it works.
+
+```
+add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+  COMMENT "Debug?$<$<CONFIG:Debug>:yes> Release?$<$<CONFIG:Release>:yes>"
+  COMMENT "Debug? $<$<CONFIG:Debug>: yes > Release? $<$<CONFIG:Release>: yes >"
+)
+```
+  Example if put same if condition for export to either Debug or Release folder location. If there space it will error. It will output with spaces.
+
+```
+if (config == "Debug"){
+  //write output
+}else{
+  //do nothing
+}
+```
+
+
+## build script:
+If like to use build folder command are here.
+
+build.bat
+```
+mkdir build
+cd build
+cmake -G "Visual Studio 17 2022" -A x64 ..
+cmake --build . --config Debug
+```
+
+```
+cmake -G "Visual Studio 17 2022" -A x64 ..
+```
+This for build project.
+
+```
+cmake --build . --config Debug
+```
+This compile build to create execute file.
+
+## project script.
+This will need current project folder.
+
+build.bat
+```
+@echo off
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug
+cmake --build build --config Debug
+```
+
+```
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug
+```
+check if folder exist or not to create build folder as well set the project debug.
  
 # Refs:
  * https://vulkan-tutorial.com

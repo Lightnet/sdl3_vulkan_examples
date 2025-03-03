@@ -13,6 +13,8 @@ set(CMAKE_PREFIX_PATH "${CMAKE_PREFIX_PATH};${VULKAN_SDK_PATH}")
 find_package(Vulkan REQUIRED)
 message(STATUS "Vulkan SDK found at: ${Vulkan_INCLUDE_DIRS}")
 
+message(STATUS "DCMAKE_BUILD_TYPE : ${CMAKE_BUILD_TYPE}")
+
 # Fetch dependencies using FetchContent
 include(FetchContent)
 
@@ -128,8 +130,8 @@ target_link_libraries(${PROJECT_NAME}
 add_dependencies(${PROJECT_NAME} spirv-cross-c spirv-cross-core spirv-cross-glsl)
 
 # Test executable
-add_executable(TestSDL src/test_sdl.c)
-target_link_libraries(TestSDL PRIVATE SDL3::SDL3)
+#add_executable(TestSDL src/test_sdl.c)
+#target_link_libraries(TestSDL PRIVATE SDL3::SDL3)
 
 # Shader compilation
 find_program(GLSLC glslc REQUIRED HINTS "${VULKAN_SDK_PATH}/Bin")

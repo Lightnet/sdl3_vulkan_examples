@@ -146,6 +146,8 @@ void vsdl_create_pipeline(VulkanContext* vkCtx) { // Match declaration
   vsdl_log("Graphics pipeline created successfully\n");
 }
 
+
+
 void vsdl_record_command_buffer(VulkanContext* vkCtx, uint32_t imageIndex) { // Match declaration
   VkCommandBufferBeginInfo beginInfo = {VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
   if (vkBeginCommandBuffer(vkCtx->commandBuffer, &beginInfo) != VK_SUCCESS) {

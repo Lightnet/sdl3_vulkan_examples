@@ -1,6 +1,6 @@
 #include "vsdl_mesh.h"
 #include "vsdl_log.h"
-#include "vsdl_vulkan_init.h"
+#include "vsdl_vulkan_init.h" // For allocator
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -8,7 +8,7 @@
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
 
-FT_Library ft_library = NULL;
+FT_Library ft_library = NULL; // Global FreeType library instance, initialized in vsdl_create_text
 
 /**
  * Finds a suitable memory type for Vulkan allocations
@@ -328,9 +328,8 @@ FT_Library ft_library = NULL;
       exit(1);
   }
 
-  // Update descriptor set with text texture (binding 1)
   VkDescriptorImageInfo textDescriptorImageInfo = {};
-  textDescriptorImageInfo.sampler = vkCtx->textureSampler; // Now valid
+  textDescriptorImageInfo.sampler = vkCtx->textureSampler;
   textDescriptorImageInfo.imageView = text->textureView;
   textDescriptorImageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
@@ -393,9 +392,10 @@ FT_Library ft_library = NULL;
   vmaDestroyImage(allocator, text->texture, text->texAlloc);
   vmaDestroyBuffer(allocator, text->buffer, text->allocation);
 
+  extern VkImageView dummyTextureView; // From main.c
   VkDescriptorImageInfo dummyDescriptorImageInfo = {};
   dummyDescriptorImageInfo.sampler = vkCtx->textureSampler;
-  dummyDescriptorImageInfo.imageView = dummyTextureView; // Now accessible via vsdl_types.h
+  dummyDescriptorImageInfo.imageView = dummyTextureView;
   dummyDescriptorImageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
   VkWriteDescriptorSet descriptorWrite = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};

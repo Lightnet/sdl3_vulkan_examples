@@ -14,13 +14,13 @@
 static VulkanContext vkCtx = {0};
 static VkImage dummyTexture;
 static VmaAllocation dummyAlloc;
-VkImageView dummyTextureView;
+VkImageView dummyTextureView; // Definition remains here
 
 int main(int argc, char* argv[]) {
     vsdl_init_log("debug.log", true);
     SDL_Init(SDL_INIT_VIDEO);
 
-    SDL_Window* window = SDL_CreateWindow("Vulkan SDL3 Text Rendering", WIDTH, HEIGHT, SDL_WINDOW_VULKAN | SDL_WINDOW_RESIZABLE);
+    SDL_Window* window = SDL_CreateWindow("Vulkan SDL3 Text Rendering", WIDTH, HEIGHT, SDL_WINDOW_VULKAN);
     if (!window) {
         vsdl_log("Window creation failed: %s\n", SDL_GetError());
         return 1;
@@ -48,44 +48,50 @@ int main(int argc, char* argv[]) {
         exit(1);
     }
 
-    // Create render pass with depth attachment
-    VkAttachmentDescription attachments[2] = {};
-    attachments[0].format = VK_FORMAT_B8G8R8A8_UNORM;
-    attachments[0].samples = VK_SAMPLE_COUNT_1_BIT;
-    attachments[0].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-    attachments[0].storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-    attachments[0].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-    attachments[0].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-    attachments[0].initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-    attachments[0].finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
-
-    attachments[1].format = VK_FORMAT_D32_SFLOAT;
-    attachments[1].samples = VK_SAMPLE_COUNT_1_BIT;
-    attachments[1].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-    attachments[1].storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-    attachments[1].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-    attachments[1].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-    attachments[1].initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-    attachments[1].finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+    // Create render pass
+    VkAttachmentDescription colorAttachment = {};
+    colorAttachment.format = VK_FORMAT_B8G8R8A8_UNORM;
+    colorAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
+    colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+    colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+    colorAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+    colorAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    colorAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    colorAttachment.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
 
     VkAttachmentReference colorAttachmentRef = {0, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL};
-    VkAttachmentReference depthAttachmentRef = {1, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL};
 
     VkSubpassDescription subpass = {};
     subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
     subpass.colorAttachmentCount = 1;
     subpass.pColorAttachments = &colorAttachmentRef;
-    subpass.pDepthStencilAttachment = &depthAttachmentRef;
 
     VkRenderPassCreateInfo renderPassInfo = {VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO};
-    renderPassInfo.attachmentCount = 2;
-    renderPassInfo.pAttachments = attachments;
+    renderPassInfo.attachmentCount = 1;
+    renderPassInfo.pAttachments = &colorAttachment;
     renderPassInfo.subpassCount = 1;
     renderPassInfo.pSubpasses = &subpass;
 
     if (vkCreateRenderPass(vkCtx.device, &renderPassInfo, NULL, &vkCtx.renderPass) != VK_SUCCESS) {
         vsdl_log("Failed to create render pass\n");
         exit(1);
+    }
+
+    // Create framebuffers
+    vkCtx.swapchainFramebuffers = malloc(vkCtx.imageCount * sizeof(VkFramebuffer));
+    for (uint32_t i = 0; i < vkCtx.imageCount; i++) {
+        VkFramebufferCreateInfo framebufferInfo = {VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO};
+        framebufferInfo.renderPass = vkCtx.renderPass;
+        framebufferInfo.attachmentCount = 1;
+        framebufferInfo.pAttachments = &vkCtx.swapchainImageViews[i];
+        framebufferInfo.width = WIDTH;
+        framebufferInfo.height = HEIGHT;
+        framebufferInfo.layers = 1;
+
+        if (vkCreateFramebuffer(vkCtx.device, &framebufferInfo, NULL, &vkCtx.swapchainFramebuffers[i]) != VK_SUCCESS) {
+            vsdl_log("Failed to create framebuffer %u\n", i);
+            exit(1);
+        }
     }
 
     // Create command pool and buffer
@@ -130,7 +136,7 @@ int main(int argc, char* argv[]) {
         exit(1);
     }
 
-    // Create dummy texture with white pixel
+    // Create dummy texture
     VkImageCreateInfo dummyImageInfo = {VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
     dummyImageInfo.imageType = VK_IMAGE_TYPE_2D;
     dummyImageInfo.format = VK_FORMAT_R8_UNORM;
@@ -167,26 +173,7 @@ int main(int argc, char* argv[]) {
         exit(1);
     }
 
-    uint8_t whitePixel = 0xFF;
-    VkBuffer stagingBuffer;
-    VmaAllocation stagingAlloc;
-    VkBufferCreateInfo stagingInfo = {VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
-    stagingInfo.size = sizeof(whitePixel);
-    stagingInfo.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
-    stagingInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-
-    VmaAllocationCreateInfo stagingAllocInfo = {};
-    stagingAllocInfo.usage = VMA_MEMORY_USAGE_CPU_ONLY;
-    if (vmaCreateBuffer(allocator, &stagingInfo, &stagingAllocInfo, &stagingBuffer, &stagingAlloc, NULL) != VK_SUCCESS) {
-        vsdl_log("Failed to create staging buffer for dummy texture\n");
-        exit(1);
-    }
-
-    void* data;
-    vmaMapMemory(allocator, stagingAlloc, &data);
-    memcpy(data, &whitePixel, sizeof(whitePixel));
-    vmaUnmapMemory(allocator, stagingAlloc);
-
+    // Transition dummy texture to shader-readable layout
     VkCommandBuffer transitionCmd;
     VkCommandBufferAllocateInfo transitionAllocInfo = {VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO};
     transitionAllocInfo.commandPool = vkCtx.commandPool;
@@ -198,49 +185,21 @@ int main(int argc, char* argv[]) {
     transitionBeginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
     vkBeginCommandBuffer(transitionCmd, &transitionBeginInfo);
 
-    VkImageMemoryBarrier toTransferBarrier = {VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};
-    toTransferBarrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-    toTransferBarrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-    toTransferBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    toTransferBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    toTransferBarrier.image = dummyTexture;
-    toTransferBarrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-    toTransferBarrier.subresourceRange.baseMipLevel = 0;
-    toTransferBarrier.subresourceRange.levelCount = 1;
-    toTransferBarrier.subresourceRange.baseArrayLayer = 0;
-    toTransferBarrier.subresourceRange.layerCount = 1;
-    toTransferBarrier.srcAccessMask = 0;
-    toTransferBarrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+    VkImageMemoryBarrier dummyBarrier = {VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};
+    dummyBarrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    dummyBarrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    dummyBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    dummyBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    dummyBarrier.image = dummyTexture;
+    dummyBarrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    dummyBarrier.subresourceRange.baseMipLevel = 0;
+    dummyBarrier.subresourceRange.levelCount = 1;
+    dummyBarrier.subresourceRange.baseArrayLayer = 0;
+    dummyBarrier.subresourceRange.layerCount = 1;
+    dummyBarrier.srcAccessMask = 0;
+    dummyBarrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
 
-    vkCmdPipelineBarrier(transitionCmd, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, NULL, 0, NULL, 1, &toTransferBarrier);
-
-    VkBufferImageCopy copyRegion = {};
-    copyRegion.bufferOffset = 0;
-    copyRegion.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-    copyRegion.imageSubresource.mipLevel = 0;
-    copyRegion.imageSubresource.baseArrayLayer = 0;
-    copyRegion.imageSubresource.layerCount = 1;
-    copyRegion.imageExtent.width = 1;
-    copyRegion.imageExtent.height = 1;
-    copyRegion.imageExtent.depth = 1;
-
-    vkCmdCopyBufferToImage(transitionCmd, stagingBuffer, dummyTexture, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copyRegion);
-
-    VkImageMemoryBarrier toShaderBarrier = {VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};
-    toShaderBarrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-    toShaderBarrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-    toShaderBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    toShaderBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    toShaderBarrier.image = dummyTexture;
-    toShaderBarrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-    toShaderBarrier.subresourceRange.baseMipLevel = 0;
-    toShaderBarrier.subresourceRange.levelCount = 1;
-    toShaderBarrier.subresourceRange.baseArrayLayer = 0;
-    toShaderBarrier.subresourceRange.layerCount = 1;
-    toShaderBarrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-    toShaderBarrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
-
-    vkCmdPipelineBarrier(transitionCmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, NULL, 0, NULL, 1, &toShaderBarrier);
+    vkCmdPipelineBarrier(transitionCmd, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, NULL, 0, NULL, 1, &dummyBarrier);
     vkEndCommandBuffer(transitionCmd);
 
     VkSubmitInfo transitionSubmit = {VK_STRUCTURE_TYPE_SUBMIT_INFO};
@@ -249,7 +208,6 @@ int main(int argc, char* argv[]) {
     vkQueueSubmit(vkCtx.graphicsQueue, 1, &transitionSubmit, VK_NULL_HANDLE);
     vkQueueWaitIdle(vkCtx.graphicsQueue);
     vkFreeCommandBuffers(vkCtx.device, vkCtx.commandPool, 1, &transitionCmd);
-    vmaDestroyBuffer(allocator, stagingBuffer, stagingAlloc);
 
     // Create descriptor pool
     VkDescriptorPoolSize poolSizes[2] = {};
@@ -337,7 +295,6 @@ int main(int argc, char* argv[]) {
     bool mouseCaptured = false;
     bool running = true;
     bool rotateObjects = false;
-    bool resized = false;
     float rotationAngle = 0.0f;
     Uint32 lastTime = SDL_GetTicks();
     SDL_Event event;
@@ -351,10 +308,6 @@ int main(int argc, char* argv[]) {
             if (event.type == SDL_EVENT_QUIT) running = false;
             vsdl_update_camera(&cam, &event, &mouseCaptured, window, deltaTime);
 
-            if (event.type == SDL_EVENT_WINDOW_RESIZED || event.type == SDL_EVENT_WINDOW_MAXIMIZED || event.type == SDL_EVENT_WINDOW_RESTORED) {
-                resized = true;
-            }
-
             if (event.type == SDL_EVENT_KEY_DOWN) {
                 switch (event.key.key) {
                     case SDLK_TAB: rotateObjects = !rotateObjects; vsdl_log("Object rotation %s\n", rotateObjects ? "enabled" : "disabled"); break;
@@ -365,13 +318,6 @@ int main(int argc, char* argv[]) {
                     case SDLK_6: vkCtx.text.exists ? vsdl_destroy_text(&vkCtx, &vkCtx.text) : vsdl_create_text(&vkCtx, &vkCtx.text); break;
                 }
             }
-        }
-
-        if (resized) {
-            int width, height;
-            SDL_GetWindowSizeInPixels(window, &width, &height);
-            recreate_swapchain(&vkCtx, window, width, height);
-            resized = false;
         }
 
         if (rotateObjects) {
@@ -386,12 +332,7 @@ int main(int argc, char* argv[]) {
 
         uint32_t imageIndex;
         VkResult result = vkAcquireNextImageKHR(vkCtx.device, vkCtx.swapchain, UINT64_MAX, vkCtx.imageAvailableSemaphore, VK_NULL_HANDLE, &imageIndex);
-        if (result == VK_ERROR_OUT_OF_DATE_KHR) {
-            int width, height;
-            SDL_GetWindowSizeInPixels(window, &width, &height);
-            recreate_swapchain(&vkCtx, window, width, height);
-            continue;
-        } else if (result != VK_SUCCESS) {
+        if (result != VK_SUCCESS) {
             vsdl_log("Failed to acquire next image: %d\n", result);
             return 1;
         }
@@ -423,13 +364,8 @@ int main(int argc, char* argv[]) {
         presentInfo.pSwapchains = &vkCtx.swapchain;
         presentInfo.pImageIndices = &imageIndex;
 
-        result = vkQueuePresentKHR(vkCtx.graphicsQueue, &presentInfo);
-        if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR) {
-            int width, height;
-            SDL_GetWindowSizeInPixels(window, &width, &height);
-            recreate_swapchain(&vkCtx, window, width, height);
-        } else if (result != VK_SUCCESS) {
-            vsdl_log("Failed to present image: %d\n", result);
+        if (vkQueuePresentKHR(vkCtx.graphicsQueue, &presentInfo) != VK_SUCCESS) {
+            vsdl_log("Failed to present image\n");
             return 1;
         }
     }
@@ -448,9 +384,7 @@ int main(int argc, char* argv[]) {
     vkDestroyDescriptorSetLayout(vkCtx.device, vkCtx.descriptorSetLayout, NULL);
     vkDestroySampler(vkCtx.device, vkCtx.textureSampler, NULL);
     vkDestroyImageView(vkCtx.device, dummyTextureView, NULL);
-    vkDestroyImageView(vkCtx.device, vkCtx.depthImageView, NULL);
     vmaDestroyImage(allocator, dummyTexture, dummyAlloc);
-    vmaDestroyImage(allocator, vkCtx.depthImage, vkCtx.depthAllocation);
     vmaDestroyBuffer(allocator, vkCtx.uniformBuffer, vkCtx.uniformAllocation);
     vsdl_cleanup_log();
     SDL_DestroyWindow(window);

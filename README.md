@@ -1,9 +1,11 @@
-# sdl3_vulkan_examples
+# SDL3 Vulkan Examples
 
 # License: MIT
 
 # Informtion:
-  This document implementation details of a Vulkan-based 3D application using SDL3 and cglm in pure C.
+  This document implementation details of a Vulkan-based 3D application using SDL3, cglm and other libs.
+  
+  Testing in c, c++ and both to see pros and cons builds.
   
   This is for reference build to understand how it works. To compile and build application.
   

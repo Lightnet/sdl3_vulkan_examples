@@ -7,7 +7,7 @@
 #include "vsdl_cleanup.h"
 
 int main(int argc, char* argv[]) {
-    SDL_Log("init main");
+    SDL_Log("init main\n");
     VSDL_Context ctx = {0};
     if (!vsdl_init(&ctx)) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Initialization failed");

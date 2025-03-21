@@ -9,6 +9,7 @@ echo Configuring with CMake...
 cmake -DCMAKE_BUILD_TYPE=Debug ..
 
 echo Building the project...
+@REM cmake --build . --config Debug --verbose  > build_log.txt 2>&1
 cmake --build . --config Debug
 
 if %ERRORLEVEL% NEQ 0 (

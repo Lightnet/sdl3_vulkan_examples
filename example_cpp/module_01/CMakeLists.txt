@@ -34,14 +34,13 @@ CPMAddPackage(
     GITHUB_REPOSITORY GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator
     GIT_TAG v3.2.1
     #OPTIONS "CONFIG REQUIRED"
-
 )
 
-CPMAddPackage(
-    NAME volk
-    GITHUB_REPOSITORY zeux/volk
-    GIT_TAG 1.4.304
-)
+# CPMAddPackage(
+#     NAME volk
+#     GITHUB_REPOSITORY zeux/volk
+#     GIT_TAG 1.4.304
+# )
 
 CPMAddPackage(
     NAME GLM
@@ -58,6 +57,8 @@ CPMAddPackage(
 # Find Vulkan from the system
 find_package(Vulkan REQUIRED)
 
+message(status "VMA: ${VMA_SOURCE_DIR}/src/")
+
 # Define the executable with all source files
 add_executable(${PROJECT_NAME}
     src/main.cpp
@@ -66,13 +67,14 @@ add_executable(${PROJECT_NAME}
     src/vsdl_mesh.cpp
     src/vsdl_pipeline.cpp
     src/vsdl_cleanup.cpp
+    ${VMA_SOURCE_DIR}/src/VmaUsage.cpp
 )
 
 # Link libraries (VMA is header-only, so not linked explicitly)
 target_link_libraries(${PROJECT_NAME} PRIVATE
     SDL3::SDL3
     Vulkan::Vulkan
-    volk
+    #volk
 )
 
 # Include directories (VMA included here)
@@ -80,10 +82,12 @@ target_include_directories(${PROJECT_NAME} PRIVATE
     ${CMAKE_SOURCE_DIR}/include
     ${SDL3_SOURCE_DIR}/include
     ${VMA_SOURCE_DIR}/include
-    ${volk_SOURCE_DIR}
+    #${volk_SOURCE_DIR}
     ${GLM_SOURCE_DIR}
     ${VulkanHeaders_SOURCE_DIR}/include
+    ${VMA_SOURCE_DIR}/src/
     ${Vulkan_INCLUDE_DIRS}
+
 )
 
 # Shader handling

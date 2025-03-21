@@ -1,10 +1,17 @@
+// vsdl_types.h
 #ifndef VSDL_TYPES_H
 #define VSDL_TYPES_H
 
 #include <SDL3/SDL.h>
-#include <SDL3/SDL_vulkan.h>
+#define VK_NO_PROTOTYPES
 #include <vulkan/vulkan.h>
+#include <volk.h>
+#include <vk_mem_alloc.h>
 #include <vector>
+
+struct Vertex {
+    float pos[2]; // x, y
+};
 
 struct VSDL_Context {
     SDL_Window* window;
@@ -12,7 +19,8 @@ struct VSDL_Context {
     VkPhysicalDevice physicalDevice;
     VkDevice device;
     VkQueue graphicsQueue;
-    VkQueue presentQueue;
+    uint32_t graphicsFamily;
+    VmaAllocator allocator;
     VkSurfaceKHR surface;
     VkSwapchainKHR swapchain;
     std::vector<VkImage> swapchainImages;
@@ -24,14 +32,8 @@ struct VSDL_Context {
     VkPipeline graphicsPipeline;
     std::vector<VkFramebuffer> framebuffers;
     VkCommandPool commandPool;
-    VkCommandBuffer commandBuffer;
-    VkSemaphore imageAvailableSemaphore;
-    VkSemaphore renderFinishedSemaphore;
-    VkFence inFlightFence;
-    VkDebugUtilsMessengerEXT debugMessenger;
-
-    // ImGui-specific
-    VkDescriptorPool imguiDescriptorPool; // For ImGui resources
+    VkBuffer vertexBuffer;
+    VmaAllocation vertexBufferAllocation;
 };
 
 #endif

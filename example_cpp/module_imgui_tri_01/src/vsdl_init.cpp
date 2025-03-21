@@ -3,6 +3,7 @@
 #include <stdexcept>
 
 // Debug callback function for validation layers
+#if VSDL_ENABLE_VALIDATION_LAYERS
 static VKAPI_ATTR VkBool32 VKAPI_CALL debugCallback(
     VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
     VkDebugUtilsMessageTypeFlagsEXT messageType,
@@ -11,6 +12,7 @@ static VKAPI_ATTR VkBool32 VKAPI_CALL debugCallback(
     SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Validation layer: %s", pCallbackData->pMessage);
     return VK_FALSE;
 }
+#endif
 
 bool vsdl_init(VSDL_Context& ctx) {
     if (!SDL_Init(SDL_INIT_VIDEO)) {
@@ -24,6 +26,7 @@ bool vsdl_init(VSDL_Context& ctx) {
         return false;
     }
 
+#if VSDL_ENABLE_VALIDATION_LAYERS
     const char* validationLayers[] = { "VK_LAYER_KHRONOS_validation" };
     uint32_t layerCount = 1;
 
@@ -46,6 +49,11 @@ bool vsdl_init(VSDL_Context& ctx) {
             layersAvailable = false;
         }
     }
+#else
+    uint32_t layerCount = 0;
+    const char** validationLayers = nullptr;
+    bool layersAvailable = false;
+#endif
 
     Uint32 extensionCount = 0;
     if (!SDL_Vulkan_GetInstanceExtensions(&extensionCount)) {
@@ -68,13 +76,19 @@ bool vsdl_init(VSDL_Context& ctx) {
     createInfo.ppEnabledExtensionNames = SDL_Vulkan_GetInstanceExtensions(&extensionCount);
 
     std::vector<const char*> extensions(createInfo.ppEnabledExtensionNames, createInfo.ppEnabledExtensionNames + extensionCount);
+#if VSDL_ENABLE_VALIDATION_LAYERS
     if (layersAvailable) {
         extensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
         createInfo.enabledLayerCount = layerCount;
         createInfo.ppEnabledLayerNames = validationLayers;
     } else {
         createInfo.enabledLayerCount = 0;
+        createInfo.ppEnabledLayerNames = nullptr;
     }
+#else
+    createInfo.enabledLayerCount = 0;
+    createInfo.ppEnabledLayerNames = nullptr;
+#endif
     createInfo.enabledExtensionCount = static_cast<uint32_t>(extensions.size());
     createInfo.ppEnabledExtensionNames = extensions.data();
 
@@ -84,6 +98,7 @@ bool vsdl_init(VSDL_Context& ctx) {
     }
     SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Vulkan instance created with %u extensions", extensionCount);
 
+#if VSDL_ENABLE_VALIDATION_LAYERS
     if (layersAvailable) {
         VkDebugUtilsMessengerCreateInfoEXT debugCreateInfo = {};
         debugCreateInfo.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT;
@@ -103,6 +118,7 @@ bool vsdl_init(VSDL_Context& ctx) {
             SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Debug messenger created");
         }
     }
+#endif
 
     if (!SDL_Vulkan_CreateSurface(ctx.window, ctx.instance, nullptr, &ctx.surface)) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create Vulkan surface: %s", SDL_GetError());
@@ -124,8 +140,8 @@ bool vsdl_init(VSDL_Context& ctx) {
     std::vector<VkQueueFamilyProperties> queueFamilies(queueFamilyCount);
     vkGetPhysicalDeviceQueueFamilyProperties(ctx.physicalDevice, &queueFamilyCount, queueFamilies.data());
 
-    uint32_t graphicsFamily = -1;
-    uint32_t presentFamily = -1;
+    uint32_t graphicsFamily = UINT32_MAX;
+    uint32_t presentFamily = UINT32_MAX;
     for (uint32_t i = 0; i < queueFamilyCount; i++) {
         if (queueFamilies[i].queueFlags & VK_QUEUE_GRAPHICS_BIT) {
             graphicsFamily = i;
@@ -135,13 +151,15 @@ bool vsdl_init(VSDL_Context& ctx) {
         if (presentSupport) {
             presentFamily = i;
         }
-        if (graphicsFamily != -1 && presentFamily != -1) break;
+        if (graphicsFamily != UINT32_MAX && presentFamily != UINT32_MAX) break;
     }
 
-    if (graphicsFamily == -1 || presentFamily == -1) {
+    if (graphicsFamily == UINT32_MAX || presentFamily == UINT32_MAX) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to find suitable queue families");
         return false;
     }
+
+    ctx.graphicsQueueFamilyIndex = graphicsFamily;
 
     std::vector<VkDeviceQueueCreateInfo> queueCreateInfos;
     float queuePriority = 1.0f;

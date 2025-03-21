@@ -2,16 +2,6 @@
 #include <SDL3/SDL_log.h>
 #include <stdexcept>
 
-// Debug callback function for validation layers
-static VKAPI_ATTR VkBool32 VKAPI_CALL debugCallback(
-    VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
-    VkDebugUtilsMessageTypeFlagsEXT messageType,
-    const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData,
-    void* pUserData) {
-    SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Validation layer: %s", pCallbackData->pMessage);
-    return VK_FALSE;
-}
-
 bool vsdl_init(VSDL_Context& ctx) {
     if (!SDL_Init(SDL_INIT_VIDEO)) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "SDL_Init failed: %s", SDL_GetError());
@@ -24,29 +14,7 @@ bool vsdl_init(VSDL_Context& ctx) {
         return false;
     }
 
-    const char* validationLayers[] = { "VK_LAYER_KHRONOS_validation" };
-    uint32_t layerCount = 1;
-
-    uint32_t availableLayerCount = 0;
-    vkEnumerateInstanceLayerProperties(&availableLayerCount, nullptr);
-    std::vector<VkLayerProperties> availableLayers(availableLayerCount);
-    vkEnumerateInstanceLayerProperties(&availableLayerCount, availableLayers.data());
-
-    bool layersAvailable = true;
-    for (const char* layer : validationLayers) {
-        bool layerFound = false;
-        for (const auto& layerProp : availableLayers) {
-            if (strcmp(layer, layerProp.layerName) == 0) {
-                layerFound = true;
-                break;
-            }
-        }
-        if (!layerFound) {
-            SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "Validation layer %s not available", layer);
-            layersAvailable = false;
-        }
-    }
-
+    // Create Vulkan instance
     Uint32 extensionCount = 0;
     if (!SDL_Vulkan_GetInstanceExtensions(&extensionCount)) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to get extension count: %s", SDL_GetError());
@@ -67,48 +35,19 @@ bool vsdl_init(VSDL_Context& ctx) {
     createInfo.enabledExtensionCount = extensionCount;
     createInfo.ppEnabledExtensionNames = SDL_Vulkan_GetInstanceExtensions(&extensionCount);
 
-    std::vector<const char*> extensions(createInfo.ppEnabledExtensionNames, createInfo.ppEnabledExtensionNames + extensionCount);
-    if (layersAvailable) {
-        extensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
-        createInfo.enabledLayerCount = layerCount;
-        createInfo.ppEnabledLayerNames = validationLayers;
-    } else {
-        createInfo.enabledLayerCount = 0;
-    }
-    createInfo.enabledExtensionCount = static_cast<uint32_t>(extensions.size());
-    createInfo.ppEnabledExtensionNames = extensions.data();
-
     if (vkCreateInstance(&createInfo, nullptr, &ctx.instance) != VK_SUCCESS) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create Vulkan instance");
         return false;
     }
     SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Vulkan instance created with %u extensions", extensionCount);
 
-    if (layersAvailable) {
-        VkDebugUtilsMessengerCreateInfoEXT debugCreateInfo = {};
-        debugCreateInfo.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT;
-        debugCreateInfo.messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT |
-                                          VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT |
-                                          VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT;
-        debugCreateInfo.messageType = VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT |
-                                      VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT |
-                                      VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
-        debugCreateInfo.pfnUserCallback = debugCallback;
-        debugCreateInfo.pUserData = nullptr;
-
-        auto vkCreateDebugUtilsMessengerEXT = (PFN_vkCreateDebugUtilsMessengerEXT)vkGetInstanceProcAddr(ctx.instance, "vkCreateDebugUtilsMessengerEXT");
-        if (vkCreateDebugUtilsMessengerEXT && vkCreateDebugUtilsMessengerEXT(ctx.instance, &debugCreateInfo, nullptr, &ctx.debugMessenger) != VK_SUCCESS) {
-            SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to set up debug messenger");
-        } else {
-            SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Debug messenger created");
-        }
-    }
-
+    // Create surface
     if (!SDL_Vulkan_CreateSurface(ctx.window, ctx.instance, nullptr, &ctx.surface)) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create Vulkan surface: %s", SDL_GetError());
         return false;
     }
 
+    // Pick physical device
     uint32_t deviceCount = 0;
     vkEnumeratePhysicalDevices(ctx.instance, &deviceCount, nullptr);
     if (deviceCount == 0) {
@@ -117,8 +56,9 @@ bool vsdl_init(VSDL_Context& ctx) {
     }
     std::vector<VkPhysicalDevice> devices(deviceCount);
     vkEnumeratePhysicalDevices(ctx.instance, &deviceCount, devices.data());
-    ctx.physicalDevice = devices[0];
+    ctx.physicalDevice = devices[0]; // Simple selection: pick first device
 
+    // Find queue families
     uint32_t queueFamilyCount = 0;
     vkGetPhysicalDeviceQueueFamilyProperties(ctx.physicalDevice, &queueFamilyCount, nullptr);
     std::vector<VkQueueFamilyProperties> queueFamilies(queueFamilyCount);
@@ -143,6 +83,7 @@ bool vsdl_init(VSDL_Context& ctx) {
         return false;
     }
 
+    // Create logical device
     std::vector<VkDeviceQueueCreateInfo> queueCreateInfos;
     float queuePriority = 1.0f;
     VkDeviceQueueCreateInfo queueCreateInfo = {};
@@ -174,6 +115,7 @@ bool vsdl_init(VSDL_Context& ctx) {
     vkGetDeviceQueue(ctx.device, graphicsFamily, 0, &ctx.graphicsQueue);
     vkGetDeviceQueue(ctx.device, presentFamily, 0, &ctx.presentQueue);
 
+    // Create swapchain (simplified)
     VkSurfaceCapabilitiesKHR capabilities;
     vkGetPhysicalDeviceSurfaceCapabilitiesKHR(ctx.physicalDevice, ctx.surface, &capabilities);
 
@@ -181,7 +123,7 @@ bool vsdl_init(VSDL_Context& ctx) {
     vkGetPhysicalDeviceSurfaceFormatsKHR(ctx.physicalDevice, ctx.surface, &formatCount, nullptr);
     std::vector<VkSurfaceFormatKHR> formats(formatCount);
     vkGetPhysicalDeviceSurfaceFormatsKHR(ctx.physicalDevice, ctx.surface, &formatCount, formats.data());
-    ctx.swapchainImageFormat = formats[0].format;
+    ctx.swapchainImageFormat = formats[0].format; // Pick first format (e.g., B8G8R8A8_UNORM)
 
     VkSwapchainCreateInfoKHR swapchainInfo = {};
     swapchainInfo.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
@@ -209,6 +151,7 @@ bool vsdl_init(VSDL_Context& ctx) {
     ctx.swapchainImages.resize(imageCount);
     vkGetSwapchainImagesKHR(ctx.device, ctx.swapchain, &imageCount, ctx.swapchainImages.data());
 
+    // Create image views
     ctx.swapchainImageViews.resize(imageCount);
     for (size_t i = 0; i < imageCount; i++) {
         VkImageViewCreateInfo viewInfo = {};

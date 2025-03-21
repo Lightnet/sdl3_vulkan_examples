@@ -2,9 +2,6 @@
 #include <SDL3/SDL_log.h>
 #include <fstream>
 #include <stdexcept>
-#include "imgui.h"
-#include "imgui_impl_sdl3.h"
-#include "imgui_impl_vulkan.h"
 
 static std::vector<char> readFile(const std::string& filename) {
     std::ifstream file(filename, std::ios::ate | std::ios::binary);
@@ -21,6 +18,7 @@ static std::vector<char> readFile(const std::string& filename) {
 }
 
 void vsdl_create_pipeline(VSDL_Context& ctx) {
+    // Load shaders from config-specific directory
     auto vertShaderCode = readFile("shaders/tri.vert.spv");
     auto fragShaderCode = readFile("shaders/tri.frag.spv");
 
@@ -94,13 +92,7 @@ void vsdl_create_pipeline(VSDL_Context& ctx) {
 
     VkPipelineColorBlendAttachmentState colorBlendAttachment = {};
     colorBlendAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
-    colorBlendAttachment.blendEnable = VK_TRUE;
-    colorBlendAttachment.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
-    colorBlendAttachment.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
-    colorBlendAttachment.colorBlendOp = VK_BLEND_OP_ADD;
-    colorBlendAttachment.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
-    colorBlendAttachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
-    colorBlendAttachment.alphaBlendOp = VK_BLEND_OP_ADD;
+    colorBlendAttachment.blendEnable = VK_FALSE;
 
     VkPipelineColorBlendStateCreateInfo colorBlending = {};
     colorBlending.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
@@ -184,90 +176,4 @@ void vsdl_create_pipeline(VSDL_Context& ctx) {
             throw std::runtime_error("Framebuffer creation failed");
         }
     }
-
-    // ImGui initialization after render pass creation
-    ImGui::CreateContext();
-    ImGui_ImplSDL3_InitForVulkan(ctx.window);
-
-    VkDescriptorPoolSize poolSizes[] = {
-        { VK_DESCRIPTOR_TYPE_SAMPLER, 1000 },
-        { VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1000 },
-        { VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 1000 },
-        { VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1000 },
-        { VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER, 1000 },
-        { VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER, 1000 },
-        { VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1000 },
-        { VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1000 },
-        { VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, 1000 },
-        { VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC, 1000 },
-        { VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT, 1000 }
-    };
-    VkDescriptorPoolCreateInfo poolInfo = {};
-    poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-    poolInfo.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
-    poolInfo.maxSets = 1000 * IM_ARRAYSIZE(poolSizes);
-    poolInfo.poolSizeCount = (uint32_t)IM_ARRAYSIZE(poolSizes);
-    poolInfo.pPoolSizes = poolSizes;
-
-    if (vkCreateDescriptorPool(ctx.device, &poolInfo, nullptr, &ctx.imguiDescriptorPool) != VK_SUCCESS) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create ImGui descriptor pool");
-        throw std::runtime_error("Failed to create ImGui descriptor pool");
-    }
-
-    ImGui_ImplVulkan_InitInfo initInfo = {};
-    initInfo.Instance = ctx.instance;
-    initInfo.PhysicalDevice = ctx.physicalDevice;
-    initInfo.Device = ctx.device;
-    initInfo.QueueFamily = 0; // Assuming graphics queue family is 0
-    initInfo.Queue = ctx.graphicsQueue;
-    initInfo.PipelineCache = VK_NULL_HANDLE;
-    initInfo.DescriptorPool = ctx.imguiDescriptorPool;
-    initInfo.RenderPass = ctx.renderPass; // Set the render pass here
-    initInfo.Allocator = nullptr;
-    initInfo.MinImageCount = 2;
-    initInfo.ImageCount = static_cast<uint32_t>(ctx.swapchainImages.size());
-    initInfo.CheckVkResultFn = nullptr;
-
-    if (!ImGui_ImplVulkan_Init(&initInfo)) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to initialize ImGui Vulkan backend");
-        throw std::runtime_error("Failed to initialize ImGui Vulkan backend");
-    }
-
-    // Create a temporary command pool for font uploading
-    VkCommandPoolCreateInfo tempPoolInfo = {};
-    tempPoolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
-    tempPoolInfo.queueFamilyIndex = 0; // Assuming graphics queue family is 0
-    tempPoolInfo.flags = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT;
-    VkCommandPool tempCommandPool;
-    if (vkCreateCommandPool(ctx.device, &tempPoolInfo, nullptr, &tempCommandPool) != VK_SUCCESS) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create temporary command pool for ImGui");
-        throw std::runtime_error("Failed to create temporary command pool for ImGui");
-    }
-
-    VkCommandBufferAllocateInfo allocInfo = {};
-    allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-    allocInfo.commandPool = tempCommandPool;
-    allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-    allocInfo.commandBufferCount = 1;
-    VkCommandBuffer fontCmdBuffer;
-    vkAllocateCommandBuffers(ctx.device, &allocInfo, &fontCmdBuffer);
-
-    VkCommandBufferBeginInfo beginInfo = {};
-    beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-    beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-    vkBeginCommandBuffer(fontCmdBuffer, &beginInfo);
-
-    ImGui_ImplVulkan_CreateFontsTexture();
-
-    vkEndCommandBuffer(fontCmdBuffer);
-
-    VkSubmitInfo submitInfo = {};
-    submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-    submitInfo.commandBufferCount = 1;
-    submitInfo.pCommandBuffers = &fontCmdBuffer;
-    vkQueueSubmit(ctx.graphicsQueue, 1, &submitInfo, VK_NULL_HANDLE);
-    vkQueueWaitIdle(ctx.graphicsQueue);
-
-    vkFreeCommandBuffers(ctx.device, tempCommandPool, 1, &fontCmdBuffer);
-    vkDestroyCommandPool(ctx.device, tempCommandPool, nullptr);
 }

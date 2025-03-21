@@ -1,11 +1,9 @@
 #include "vsdl_renderer.h"
 #include <SDL3/SDL_log.h>
-#include <stdexcept>
-#include "imgui.h"
-#include "imgui_impl_sdl3.h"
-#include "imgui_impl_vulkan.h"
+#include <stdexcept> // Added for std::runtime_error
 
 void vsdl_render_loop(VSDL_Context& ctx) {
+    // Create command pool
     VkCommandPoolCreateInfo poolInfo = {};
     poolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
     poolInfo.queueFamilyIndex = 0; // Assuming graphics queue is at index 0
@@ -15,6 +13,7 @@ void vsdl_render_loop(VSDL_Context& ctx) {
         throw std::runtime_error("Command pool creation failed");
     }
 
+    // Allocate command buffer
     VkCommandBufferAllocateInfo allocInfo = {};
     allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
     allocInfo.commandPool = ctx.commandPool;
@@ -25,6 +24,7 @@ void vsdl_render_loop(VSDL_Context& ctx) {
         throw std::runtime_error("Command buffer allocation failed");
     }
 
+    // Create synchronization objects
     VkSemaphoreCreateInfo semaphoreInfo = {};
     semaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
     if (vkCreateSemaphore(ctx.device, &semaphoreInfo, nullptr, &ctx.imageAvailableSemaphore) != VK_SUCCESS ||
@@ -41,23 +41,13 @@ void vsdl_render_loop(VSDL_Context& ctx) {
         throw std::runtime_error("Fence creation failed");
     }
 
+    // Render loop
     bool running = true;
     SDL_Event event;
     while (running) {
         while (SDL_PollEvent(&event)) {
-            ImGui_ImplSDL3_ProcessEvent(&event);
             if (event.type == SDL_EVENT_QUIT) running = false;
         }
-
-        ImGui_ImplVulkan_NewFrame();
-        ImGui_ImplSDL3_NewFrame();
-        ImGui::NewFrame();
-
-        ImGui::Begin("Test Window");
-        ImGui::Text("Hello, ImGui with Vulkan!");
-        ImGui::End();
-
-        ImGui::Render();
 
         vkWaitForFences(ctx.device, 1, &ctx.inFlightFence, VK_TRUE, UINT64_MAX);
         vkResetFences(ctx.device, 1, &ctx.inFlightFence);
@@ -85,8 +75,7 @@ void vsdl_render_loop(VSDL_Context& ctx) {
 
         vkCmdBeginRenderPass(ctx.commandBuffer, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
         vkCmdBindPipeline(ctx.commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, ctx.graphicsPipeline);
-        vkCmdDraw(ctx.commandBuffer, 3, 1, 0, 0);
-        ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), ctx.commandBuffer);
+        vkCmdDraw(ctx.commandBuffer, 3, 1, 0, 0); // Draw triangle (3 vertices)
         vkCmdEndRenderPass(ctx.commandBuffer);
 
         if (vkEndCommandBuffer(ctx.commandBuffer) != VK_SUCCESS) {

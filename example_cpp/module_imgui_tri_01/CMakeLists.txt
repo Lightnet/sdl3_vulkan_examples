@@ -15,6 +15,21 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
 set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
 
+# Option to enable/disable validation layers
+option(ENABLE_VULKAN_VALIDATION_LAYERS "Enable Vulkan validation layers" ON)
+if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+    set(ENABLE_VULKAN_VALIDATION_LAYERS ON CACHE BOOL "Force validation layers in Debug" FORCE)
+elseif(CMAKE_BUILD_TYPE STREQUAL "Release")
+    set(ENABLE_VULKAN_VALIDATION_LAYERS OFF CACHE BOOL "Disable validation layers in Release" FORCE)
+endif()
+
+# Define VSDL_ENABLE_VALIDATION_LAYERS based on the option
+if(ENABLE_VULKAN_VALIDATION_LAYERS)
+    add_definitions(-DVSDL_ENABLE_VALIDATION_LAYERS=1)
+else()
+    add_definitions(-DVSDL_ENABLE_VALIDATION_LAYERS=0)
+endif()
+
 # Download CPM.cmake v0.40.7
 file(DOWNLOAD
     "https://github.com/cpm-cmake/CPM.cmake/releases/download/v0.40.7/CPM.cmake"
@@ -74,6 +89,7 @@ add_executable(${PROJECT_NAME}
     src/vsdl_mesh.cpp
     src/vsdl_pipeline.cpp
     src/vsdl_cleanup.cpp
+    src/vsdl_imgui.cpp
     ${VMA_SOURCE_DIR}/src/VmaUsage.cpp
     ${IMGUI_SOURCES}  # Add ImGui sources
 )
@@ -97,7 +113,7 @@ target_include_directories(${PROJECT_NAME} PRIVATE
     ${IMGUI_SOURCE_DIR}/backends  # For backend implementations
 )
 
-# Shader handling (unchanged)
+# Shader handling
 set(SHADER_SRC_DIR ${CMAKE_SOURCE_DIR}/shaders)
 set(SHADER_DEST_DIR ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/$<CONFIG>/shaders)
 

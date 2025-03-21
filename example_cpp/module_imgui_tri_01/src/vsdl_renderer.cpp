@@ -1,14 +1,15 @@
 #include "vsdl_renderer.h"
-#include <SDL3/SDL_log.h>
-#include <stdexcept>
+#include "vsdl_imgui.h"
 #include "imgui.h"
 #include "imgui_impl_sdl3.h"
 #include "imgui_impl_vulkan.h"
+#include <SDL3/SDL_log.h>
+#include <stdexcept>
 
 void vsdl_render_loop(VSDL_Context& ctx) {
     VkCommandPoolCreateInfo poolInfo = {};
     poolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
-    poolInfo.queueFamilyIndex = 0; // Assuming graphics queue is at index 0
+    poolInfo.queueFamilyIndex = ctx.graphicsQueueFamilyIndex; // Use the stored index
     poolInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
     if (vkCreateCommandPool(ctx.device, &poolInfo, nullptr, &ctx.commandPool) != VK_SUCCESS) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create command pool");
@@ -44,26 +45,32 @@ void vsdl_render_loop(VSDL_Context& ctx) {
     bool running = true;
     SDL_Event event;
     while (running) {
+        // Process events
         while (SDL_PollEvent(&event)) {
-            ImGui_ImplSDL3_ProcessEvent(&event);
+            vsdl::imgui_new_frame(ctx, event); // Process SDL events for ImGui
             if (event.type == SDL_EVENT_QUIT) running = false;
         }
 
+        // Start ImGui frame
         ImGui_ImplVulkan_NewFrame();
         ImGui_ImplSDL3_NewFrame();
         ImGui::NewFrame();
 
+        // Example ImGui UI
         ImGui::Begin("Test Window");
         ImGui::Text("Hello, ImGui with Vulkan!");
         ImGui::End();
 
-        ImGui::Render();
-
+        // Vulkan rendering
         vkWaitForFences(ctx.device, 1, &ctx.inFlightFence, VK_TRUE, UINT64_MAX);
         vkResetFences(ctx.device, 1, &ctx.inFlightFence);
 
         uint32_t imageIndex;
-        vkAcquireNextImageKHR(ctx.device, ctx.swapchain, UINT64_MAX, ctx.imageAvailableSemaphore, VK_NULL_HANDLE, &imageIndex);
+        VkResult result = vkAcquireNextImageKHR(ctx.device, ctx.swapchain, UINT64_MAX, ctx.imageAvailableSemaphore, VK_NULL_HANDLE, &imageIndex);
+        if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) {
+            SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to acquire swapchain image");
+            throw std::runtime_error("Swapchain image acquisition failed");
+        }
 
         vkResetCommandBuffer(ctx.commandBuffer, 0);
         VkCommandBufferBeginInfo beginInfo = {};
@@ -85,8 +92,8 @@ void vsdl_render_loop(VSDL_Context& ctx) {
 
         vkCmdBeginRenderPass(ctx.commandBuffer, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
         vkCmdBindPipeline(ctx.commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, ctx.graphicsPipeline);
-        vkCmdDraw(ctx.commandBuffer, 3, 1, 0, 0);
-        ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), ctx.commandBuffer);
+        vkCmdDraw(ctx.commandBuffer, 3, 1, 0, 0); // Draw triangle
+        vsdl::imgui_render(ctx, ctx.commandBuffer); // Render ImGui
         vkCmdEndRenderPass(ctx.commandBuffer);
 
         if (vkEndCommandBuffer(ctx.commandBuffer) != VK_SUCCESS) {

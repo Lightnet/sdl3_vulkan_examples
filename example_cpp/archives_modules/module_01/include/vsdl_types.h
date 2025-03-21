@@ -1,9 +1,22 @@
 #ifndef VSDL_TYPES_H
 #define VSDL_TYPES_H
 
+//#define VMA_VULKAN_VERSION 1004000 // Vulkan 1.4?
+
+//#define VMA_IMPLEMENTATION
+//#define VMA_STATIC_VULKAN_FUNCTIONS VK_TRUE
+//#define VMA_DEBUG_GLOBAL_MUTEX VK_TRUE
+//#define VMA_RECORDING_ENABLED PICOVK_ENABLE_VALIDATION
+//#define VMA_VULKAN_VERSION 1002000 // Vulkan 1.2
+//#define VMA_VULKAN_VERSION 1004000 // Vulkan 1.4?
+//#define VMA_STATIC_VULKAN_FUNCTIONS 0
+//#define VMA_DYNAMIC_VULKAN_FUNCTIONS 1
+
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_vulkan.h>
 #include <vulkan/vulkan.h>
+//#include "vmausage.h"
+//#include <vk_mem_alloc.h> // Include VMA header
 #include <vector>
 
 struct VSDL_Context {
@@ -28,10 +41,6 @@ struct VSDL_Context {
     VkSemaphore imageAvailableSemaphore;
     VkSemaphore renderFinishedSemaphore;
     VkFence inFlightFence;
-    VkDebugUtilsMessengerEXT debugMessenger;
-
-    // ImGui-specific
-    VkDescriptorPool imguiDescriptorPool; // For ImGui resources
 };
 
 #endif

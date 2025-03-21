@@ -33,12 +33,14 @@ CPMAddPackage(
     NAME VMA
     GITHUB_REPOSITORY GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator
     GIT_TAG v3.2.1
+    #OPTIONS "CONFIG REQUIRED"
+
 )
 
 CPMAddPackage(
-    NAME IMGUI
-    GITHUB_REPOSITORY ocornut/imgui
-    GIT_TAG v1.91.8
+    NAME volk
+    GITHUB_REPOSITORY zeux/volk
+    GIT_TAG 1.4.304
 )
 
 CPMAddPackage(
@@ -56,16 +58,6 @@ CPMAddPackage(
 # Find Vulkan from the system
 find_package(Vulkan REQUIRED)
 
-# Define ImGui source files
-set(IMGUI_SOURCES
-    ${IMGUI_SOURCE_DIR}/imgui.cpp
-    ${IMGUI_SOURCE_DIR}/imgui_draw.cpp
-    ${IMGUI_SOURCE_DIR}/imgui_tables.cpp
-    ${IMGUI_SOURCE_DIR}/imgui_widgets.cpp
-    ${IMGUI_SOURCE_DIR}/backends/imgui_impl_sdl3.cpp
-    ${IMGUI_SOURCE_DIR}/backends/imgui_impl_vulkan.cpp
-)
-
 # Define the executable with all source files
 add_executable(${PROJECT_NAME}
     src/main.cpp
@@ -74,47 +66,48 @@ add_executable(${PROJECT_NAME}
     src/vsdl_mesh.cpp
     src/vsdl_pipeline.cpp
     src/vsdl_cleanup.cpp
-    ${VMA_SOURCE_DIR}/src/VmaUsage.cpp
-    ${IMGUI_SOURCES}  # Add ImGui sources
 )
 
-# Link libraries
+# Link libraries (VMA is header-only, so not linked explicitly)
 target_link_libraries(${PROJECT_NAME} PRIVATE
     SDL3::SDL3
     Vulkan::Vulkan
+    volk
 )
 
-# Include directories
+# Include directories (VMA included here)
 target_include_directories(${PROJECT_NAME} PRIVATE
     ${CMAKE_SOURCE_DIR}/include
     ${SDL3_SOURCE_DIR}/include
     ${VMA_SOURCE_DIR}/include
+    ${volk_SOURCE_DIR}
     ${GLM_SOURCE_DIR}
     ${VulkanHeaders_SOURCE_DIR}/include
-    ${VMA_SOURCE_DIR}/src/
     ${Vulkan_INCLUDE_DIRS}
-    ${IMGUI_SOURCE_DIR}  # ImGui include directory
-    ${IMGUI_SOURCE_DIR}/backends  # For backend implementations
 )
 
-# Shader handling (unchanged)
+# Shader handling
 set(SHADER_SRC_DIR ${CMAKE_SOURCE_DIR}/shaders)
 set(SHADER_DEST_DIR ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/$<CONFIG>/shaders)
 
+# Check if shaders folder exists
 if(NOT EXISTS ${SHADER_SRC_DIR})
     message(FATAL_ERROR "Shaders directory '${SHADER_SRC_DIR}' does not exist. Please create it and add 'tri.vert' and 'tri.frag' files.")
 endif()
 
+# Find glslc shader compiler
 find_program(GLSLC_EXECUTABLE glslc HINTS "C:/VulkanSDK/1.4.304.1/Bin" "$ENV{VULKAN_SDK}/Bin")
 if(NOT GLSLC_EXECUTABLE)
     message(FATAL_ERROR "glslc not found. Ensure Vulkan SDK is installed at C:/VulkanSDK/1.4.304.1/")
 endif()
 
+# Define shader files
 set(SHADER_FILES
     ${SHADER_SRC_DIR}/tri.vert
     ${SHADER_SRC_DIR}/tri.frag
 )
 
+# Compile shaders and ensure directory exists at build time
 foreach(SHADER ${SHADER_FILES})
     get_filename_component(SHADER_NAME ${SHADER} NAME)
     set(SHADER_OUTPUT ${SHADER_DEST_DIR}/${SHADER_NAME}.spv)
@@ -128,9 +121,11 @@ foreach(SHADER ${SHADER_FILES})
     list(APPEND SHADER_OUTPUTS ${SHADER_OUTPUT})
 endforeach()
 
+# Add shader compilation as a custom target
 add_custom_target(Shaders ALL DEPENDS ${SHADER_OUTPUTS})
 add_dependencies(${PROJECT_NAME} Shaders)
 
+# Copy SDL3 DLLs if needed (Windows-specific), using $<CONFIG>
 if(WIN32 AND TARGET SDL3::SDL3-shared)
     add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
